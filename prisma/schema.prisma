@@ -43,6 +43,12 @@ model Member {
   bannedAt       DateTime?
   bannedReason   String?
 
+  // Temporaere Ausleih-Sperre (z.B. nach mehr als 15 Min. Ueberziehung einer
+  // Ausleihe) - unabhaengig vom "status"-Feld: die Person bleibt aktives
+  // Mitglied, darf in diesem Zeitraum aber nichts Neues ausleihen.
+  borrowSuspendedUntil  DateTime?
+  borrowSuspendedReason String?
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -125,9 +131,16 @@ model Loan {
   status      String    @default("ACTIVE")
 
   borrowedAt  DateTime  @default(now())
+  // Feste 2h-Ausleihfrist ab borrowedAt, wird beim Ausleihen automatisch gesetzt.
   dueAt       DateTime?
   returnedAt  DateTime?
   notes       String?
+
+  // Welche Erinnerungsstufe fuer diese Ausleihe zuletzt verschickt wurde -
+  // verhindert doppelte Discord-DMs bei jedem Cron-Durchlauf. Reihenfolge:
+  // NONE -> THIRTY (30 Min. vorher) -> FIVE (5 Min. vorher) -> OVERDUE
+  // (Frist abgelaufen) -> SUSPENDED (mehr als 15 Min. ueberzogen, Sperre verhaengt).
+  reminderStage String @default("NONE")
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

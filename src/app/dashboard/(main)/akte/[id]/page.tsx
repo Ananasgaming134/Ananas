@@ -13,6 +13,7 @@ import RoleBadge from "@/components/RoleBadge";
 import StatusBadge from "@/components/StatusBadge";
 import StatCard from "@/components/StatCard";
 import ElapsedTime from "@/components/ElapsedTime";
+import LoanCountdown from "@/components/LoanCountdown";
 import {
   canManage,
   formatCoins,
@@ -36,7 +37,7 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
   const target = await prisma.member.findUnique({ where: { id } });
   if (!target) notFound();
 
-  const [loans, notes] = await Promise.all([
+  const [loans, notes, suspensionEvents] = await Promise.all([
     prisma.loan.findMany({
       where: { memberId: target.id },
       include: { item: true },
@@ -49,7 +50,17 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
           orderBy: { createdAt: "desc" },
         })
       : Promise.resolve([]),
+    prisma.auditLog.findMany({
+      where: { targetId: target.id, action: "BORROW_SUSPENDED" },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
+
+  // Verstoesse = verspaetet zurueckgegebene Ausleihen (returnedAt nach dueAt)
+  // plus jede tatsaechlich verhaengte Ausleih-Sperre - alles aus vorhandenen
+  // Daten hergeleitet, keine zusaetzliche Tabelle noetig.
+  const lateReturns = loans.filter((l) => l.dueAt && l.returnedAt && l.returnedAt > l.dueAt);
+  const isCurrentlySuspended = Boolean(target.borrowSuspendedUntil && target.borrowSuspendedUntil > new Date());
 
   const boundAddNote = addMemberNote.bind(null, target.id);
   const boundRevoke = revokeAccess.bind(null, target.id);
@@ -175,6 +186,13 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
             <span className="font-medium">Dauerhaft ausgeschlossen</span> am{" "}
             {target.bannedAt.toLocaleDateString("de-DE")}
             {target.bannedReason ? ` – ${target.bannedReason}` : ""}
+          </div>
+        )}
+        {isCurrentlySuspended && (
+          <div className="mt-6 rounded-lg border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">
+            <span className="font-medium">🚫 Ausleih-Sperre aktiv</span> bis{" "}
+            {target.borrowSuspendedUntil?.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
+            {target.borrowSuspendedReason ? ` – ${target.borrowSuspendedReason}` : ""}
           </div>
         )}
 
@@ -344,6 +362,7 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
                 <tr>
                   <th className="py-2 font-medium">Item</th>
                   <th className="py-2 font-medium">Ausgeliehen am</th>
+                  <th className="py-2 font-medium">Frist</th>
                   <th className="py-2 font-medium">Zurückgegeben am</th>
                   <th className="py-2 font-medium">Kanal</th>
                   <th className="py-2 font-medium">Status</th>
@@ -351,32 +370,87 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {loans.map((loan) => (
-                  <tr key={loan.id} className="transition hover:bg-surface-2/40">
-                    <td className="py-2.5">{loan.item.name}</td>
-                    <td className="py-2.5 text-muted">
-                      {loan.borrowedAt.toLocaleString("de-DE")}
-                    </td>
-                    <td className="py-2.5 text-muted">
-                      {loan.returnedAt ? loan.returnedAt.toLocaleString("de-DE") : "-"}
-                    </td>
-                    <td className="py-2.5 text-muted">{loan.channel}</td>
-                    <td className="py-2.5">
-                      {LOAN_STATUS_LABELS[loan.status as keyof typeof LOAN_STATUS_LABELS] ??
-                        loan.status}
-                    </td>
-                    <td className="py-2.5 text-accent-2">
-                      {loan.status === LOAN_STATUS.ACTIVE ? (
-                        <ElapsedTime since={loan.borrowedAt} />
-                      ) : (
-                        <span className="text-muted">-</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {loans.map((loan) => {
+                  const wasLate = Boolean(loan.dueAt && loan.returnedAt && loan.returnedAt > loan.dueAt);
+                  return (
+                    <tr key={loan.id} className="transition hover:bg-surface-2/40">
+                      <td className="py-2.5">{loan.item.name}</td>
+                      <td className="py-2.5 text-muted">
+                        {loan.borrowedAt.toLocaleString("de-DE")}
+                      </td>
+                      <td className="py-2.5 text-muted">
+                        {loan.dueAt ? loan.dueAt.toLocaleString("de-DE") : "-"}
+                      </td>
+                      <td className="py-2.5 text-muted">
+                        {loan.returnedAt ? (
+                          <>
+                            {loan.returnedAt.toLocaleString("de-DE")}
+                            {wasLate && (
+                              <span className="ml-1.5 rounded-full border border-danger/40 bg-danger/10 px-1.5 py-0.5 text-[10px] font-medium text-danger">
+                                verspätet
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="py-2.5 text-muted">{loan.channel}</td>
+                      <td className="py-2.5">
+                        {LOAN_STATUS_LABELS[loan.status as keyof typeof LOAN_STATUS_LABELS] ??
+                          loan.status}
+                      </td>
+                      <td className="py-2.5 text-accent-2">
+                        {loan.status === LOAN_STATUS.ACTIVE ? (
+                          loan.dueAt ? (
+                            <LoanCountdown dueAt={loan.dueAt} />
+                          ) : (
+                            <ElapsedTime since={loan.borrowedAt} />
+                          )
+                        ) : (
+                          <span className="text-muted">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+
+      <div className="card p-6">
+        <h2 className="mb-4 text-sm font-semibold">Verstöße</h2>
+        {lateReturns.length === 0 && suspensionEvents.length === 0 ? (
+          <p className="text-sm text-muted">Keine Verstöße bekannt.</p>
+        ) : (
+          <ul className="space-y-2.5">
+            {suspensionEvents.map((event) => (
+              <li
+                key={event.id}
+                className="rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger"
+              >
+                <span className="font-medium">🚫 Ausleih-Sperre verhängt</span>{" "}
+                <span className="text-danger/70">
+                  ({event.createdAt.toLocaleString("de-DE")})
+                </span>
+                {event.details && <p className="mt-1 text-xs text-danger/90">{event.details}</p>}
+              </li>
+            ))}
+            {lateReturns.map((loan) => (
+              <li
+                key={loan.id}
+                className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-500"
+              >
+                <span className="font-medium">⏰ Verspätet zurückgegeben:</span> {loan.item.name}{" "}
+                <span className="text-yellow-500/70">
+                  (Frist {loan.dueAt?.toLocaleString("de-DE")}, zurück{" "}
+                  {loan.returnedAt?.toLocaleString("de-DE")})
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 

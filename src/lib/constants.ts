@@ -55,6 +55,21 @@ export const LOAN_STATUS_LABELS: Record<LoanStatusValue, string> = {
   OVERDUE: "Überfällig",
 };
 
+// Ausleih-Zeitregeln (siehe src/lib/loans.ts fuer die eigentliche Durchsetzung).
+export const BORROW_DURATION_MS = 2 * 60 * 60 * 1000; // 2 Stunden pro Ausleihe
+export const REBORROW_COOLDOWN_MS = 30 * 60 * 1000; // 30 Min. Pause vor erneuter Ausleihe desselben Items
+export const OVERDUE_SUSPENSION_GRACE_MS = 15 * 60 * 1000; // Kulanzfrist nach Ablauf, bevor die Sperre greift
+export const BORROW_SUSPENSION_DURATION_MS = 2 * 60 * 60 * 1000; // Dauer der Ausleih-Sperre bei Ueberziehung
+
+export const LOAN_REMINDER_STAGE = {
+  NONE: "NONE",
+  THIRTY: "THIRTY",
+  FIVE: "FIVE",
+  OVERDUE: "OVERDUE",
+  SUSPENDED: "SUSPENDED",
+} as const;
+export type LoanReminderStageValue = (typeof LOAN_REMINDER_STAGE)[keyof typeof LOAN_REMINDER_STAGE];
+
 export const LOAN_CHANNEL = {
   WEB: "WEB",
   DISCORD: "DISCORD",

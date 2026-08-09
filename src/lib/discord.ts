@@ -103,6 +103,40 @@ export async function checkRoleLive(discordUserId: string): Promise<RoleCheckRes
   }
 }
 
+/**
+ * Sendet eine Direktnachricht (DM) an einen Discord-User per Bot-Token.
+ * Discord erfordert dafuer zuerst das Anlegen/Abrufen eines DM-Kanals.
+ * Schlaegt z.B. fehl, wenn die Person DMs von Server-Mitgliedern deaktiviert
+ * hat oder den Bot blockiert hat - Aufrufer sollten das nicht als kritischen
+ * Fehler behandeln, nur die Erinnerung ist dann nicht angekommen.
+ */
+export async function sendDiscordDirectMessage(
+  discordUserId: string,
+  payload: { content?: string; embeds?: unknown[] }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const channelRes = await fetch(`https://discord.com/api/v10/users/@me/channels`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ recipient_id: discordUserId }),
+  });
+  if (!channelRes.ok) {
+    return { ok: false, error: `DM-Kanal konnte nicht erstellt werden (${channelRes.status}).` };
+  }
+  const channel = (await channelRes.json()) as { id: string };
+
+  const messageRes = await fetch(`https://discord.com/api/v10/channels/${channel.id}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!messageRes.ok) {
+    return { ok: false, error: `Nachricht konnte nicht gesendet werden (${messageRes.status}).` };
+  }
+  return { ok: true };
+}
+
 export type DiscordGuildMember = {
   discordId: string;
   username: string;

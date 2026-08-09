@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { borrowItem, returnLoan } from "@/app/actions/loans";
-import ElapsedTime from "@/components/ElapsedTime";
+import LoanCountdown from "@/components/LoanCountdown";
 import { hasAtLeastRole, LOAN_STATUS, ROLES } from "@/lib/constants";
 
 export default async function ItemsPage({
@@ -45,6 +45,7 @@ export default async function ItemsPage({
   const activeCountByItem = new Map(activeLoans.map((l) => [l.itemId, l._count.itemId]));
   const myLoanByItem = new Map(myActiveLoans.map((l) => [l.itemId, l]));
   const isFiltered = Boolean(q || kategorie);
+  const isSuspended = Boolean(member.borrowSuspendedUntil && member.borrowSuspendedUntil > new Date());
 
   // Items werden immer nach Kategorie gruppiert dargestellt - auch bei
   // "Alle Kategorien" - statt alphabetisch quer durcheinander, damit man sich
@@ -82,6 +83,17 @@ export default async function ItemsPage({
           </Link>
         )}
       </div>
+
+      {isSuspended && (
+        <div className="card border-danger/40 bg-danger/10 p-4">
+          <p className="text-sm font-semibold text-danger">🚫 Ausleih-Sperre aktiv</p>
+          <p className="mt-1 text-sm text-danger/90">
+            {member.borrowSuspendedReason ?? "Du bist aktuell für das Ausleihen gesperrt."}
+            {" "}Gesperrt bis{" "}
+            {member.borrowSuspendedUntil?.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}.
+          </p>
+        </div>
+      )}
 
       {categories.length > 0 && (
         <form className="card flex flex-wrap items-center gap-3 p-4" method="GET">
@@ -172,9 +184,12 @@ export default async function ItemsPage({
                         <div className="mt-auto pt-4">
                           {myLoan ? (
                             <>
-                              <p className="mb-2 text-center text-xs text-muted">
-                                Ausgeliehen seit{" "}
-                                <ElapsedTime since={myLoan.borrowedAt} className="text-accent-2" />
+                              <p className="mb-2 text-center text-xs">
+                                {myLoan.dueAt ? (
+                                  <LoanCountdown dueAt={myLoan.dueAt} />
+                                ) : (
+                                  <span className="text-muted">Ausgeliehen</span>
+                                )}
                               </p>
                               <form action={returnLoan.bind(null, myLoan.id)}>
                                 <button
@@ -185,6 +200,14 @@ export default async function ItemsPage({
                                 </button>
                               </form>
                             </>
+                          ) : isSuspended ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="w-full cursor-not-allowed rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
+                            >
+                              Gesperrt
+                            </button>
                           ) : available > 0 ? (
                             <form action={borrowItem.bind(null, item.id)}>
                               <button
