@@ -315,17 +315,38 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
               </span>{" "}
               an (deine Kundennummer), damit die Zahlung dir automatisch zugeordnet werden kann.
             </p>
-            <ul className="mt-3 space-y-1.5">
-              {SUBSCRIPTION_PLANS.map((plan) => (
-                <li
-                  key={plan.id}
-                  className="flex items-center justify-between rounded-md border border-border bg-surface px-3 py-2 text-xs"
-                >
-                  <span>{plan.label}</span>
-                  <span className="font-medium text-accent">{formatCoins(plan.price)}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {SUBSCRIPTION_PLANS.map((plan) => {
+                const monthlyRate = plan.price / plan.months;
+                const baseMonthlyRate = SUBSCRIPTION_PLANS[0].price / SUBSCRIPTION_PLANS[0].months;
+                const savingsPct = Math.round((1 - monthlyRate / baseMonthlyRate) * 100);
+                const isBestValue = plan.id === SUBSCRIPTION_PLANS[SUBSCRIPTION_PLANS.length - 1].id;
+                return (
+                  <div
+                    key={plan.id}
+                    className={`card-hover relative rounded-lg border p-4 ${
+                      isBestValue ? "border-accent/50 bg-accent/5" : "border-border bg-surface"
+                    }`}
+                  >
+                    {isBestValue && (
+                      <span className="absolute -top-2.5 right-3 rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-black">
+                        Beliebt
+                      </span>
+                    )}
+                    <p className="text-sm font-semibold">{plan.label}</p>
+                    <p className="mt-1.5 text-lg font-semibold text-accent">
+                      {formatCoins(plan.price)}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted">
+                      {formatCoins(Math.round(monthlyRate))} / Monat
+                      {savingsPct > 0 && (
+                        <span className="ml-1.5 text-accent-2">-{savingsPct}%</span>
+                      )}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
             <p className="mt-3 text-[11px] text-muted">
               Nach Zahlungseingang wird dein Abo automatisch erkannt bzw. von der Aufsicht
               bestätigt.

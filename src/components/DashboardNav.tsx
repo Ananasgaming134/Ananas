@@ -14,6 +14,8 @@ type NavItem = {
 const KUNDENBEREICH_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Übersicht" },
   { href: "/dashboard/items", label: "Items" },
+  { href: "/dashboard/anleitung", label: "Anleitung" },
+  { href: "/dashboard/hilfe", label: "Hilfe" },
   { href: "/dashboard/akte", label: "Profil" },
 ];
 

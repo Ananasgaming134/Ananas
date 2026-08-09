@@ -2,8 +2,15 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import StatCard from "@/components/StatCard";
-import ElapsedTime from "@/components/ElapsedTime";
-import { formatCoins, LOAN_STATUS } from "@/lib/constants";
+import LoanCountdown from "@/components/LoanCountdown";
+import { formatCoins, getSubscriptionPlan, LOAN_STATUS } from "@/lib/constants";
+
+const QUICK_LINKS = [
+  { href: "/dashboard/items", icon: "📦", label: "Items", text: "Verfügbare Items durchstöbern" },
+  { href: "/dashboard/anleitung", icon: "📖", label: "Anleitung", text: "Ablauf & Zeitregeln" },
+  { href: "/dashboard/hilfe", icon: "💬", label: "Hilfe", text: "FAQ & Support" },
+  { href: "/dashboard/akte", icon: "👤", label: "Profil", text: "Abo, Historie & mehr" },
+];
 
 export default async function DashboardPage() {
   const member = await requireMember();
@@ -30,13 +37,52 @@ export default async function DashboardPage() {
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
+  const isSuspended = Boolean(member.borrowSuspendedUntil && member.borrowSuspendedUntil > new Date());
+  const currentPlan = getSubscriptionPlan(member.subscriptionPlan);
+  const isExpired = member.feePaidUntil ? member.feePaidUntil < new Date() : true;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Willkommen, {member.displayName}</h1>
-        <p className="mt-1 text-sm text-muted">
-          Monatliche Gebühr: {formatCoins(member.monthlyFee)}
+    <div className="space-y-8">
+      <div className="card-glass relative overflow-hidden p-6 sm:p-8">
+        <div className="shimmer pointer-events-none absolute inset-0" />
+        <h1 className="relative text-2xl font-semibold">
+          Willkommen zurück, <span className="text-gradient">{member.displayName}</span>
+        </h1>
+        <p className="relative mt-2 text-sm text-muted">
+          Kundennummer {member.customerNumber ?? "-"} &middot; Monatliche Gebühr{" "}
+          {formatCoins(member.monthlyFee)}
         </p>
+      </div>
+
+      {isSuspended && (
+        <div className="card border-danger/40 bg-danger/10 p-4">
+          <p className="text-sm font-semibold text-danger">🚫 Ausleih-Sperre aktiv</p>
+          <p className="mt-1 text-sm text-danger/90">
+            {member.borrowSuspendedReason ?? "Du bist aktuell für das Ausleihen gesperrt."} Gesperrt
+            bis{" "}
+            {member.borrowSuspendedUntil?.toLocaleString("de-DE", {
+              dateStyle: "short",
+              timeStyle: "short",
+            })}
+            .
+          </p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {QUICK_LINKS.map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className="card card-hover flex items-center gap-3 p-4"
+          >
+            <span className="text-2xl">{link.icon}</span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">{link.label}</p>
+              <p className="truncate text-xs text-muted">{link.text}</p>
+            </div>
+          </Link>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -57,8 +103,8 @@ export default async function DashboardPage() {
         <div className="card p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Deine aktuell ausgeliehenen Items</h2>
-            <Link href="/dashboard/akte" className="text-xs text-accent hover:underline">
-              Profil ansehen
+            <Link href="/dashboard/items" className="text-xs text-accent hover:underline">
+              Zu den Items
             </Link>
           </div>
           {myActiveLoans.length === 0 ? (
@@ -68,9 +114,11 @@ export default async function DashboardPage() {
               {myActiveLoans.map((loan) => (
                 <li key={loan.id} className="flex items-center justify-between py-2.5 text-sm">
                   <span>{loan.item.name}</span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-2/30 bg-accent-2/10 px-2 py-0.5 text-xs text-accent-2">
-                    <ElapsedTime since={loan.borrowedAt} />
-                  </span>
+                  {loan.dueAt ? (
+                    <LoanCountdown dueAt={loan.dueAt} className="text-xs" />
+                  ) : (
+                    <span className="text-xs text-muted">-</span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -97,6 +145,46 @@ export default async function DashboardPage() {
               ))}
             </ul>
           )}
+        </div>
+      </div>
+
+      <div
+        className={`card border-l-4 p-5 ${
+          currentPlan ? (isExpired ? "border-l-danger" : "border-l-accent-2") : "border-l-border"
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">Dein Abo</h2>
+              {currentPlan && (
+                <span
+                  className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                    isExpired
+                      ? "border-danger/40 bg-danger/10 text-danger"
+                      : "border-accent-2/40 bg-accent-2/10 text-accent-2"
+                  }`}
+                >
+                  {isExpired ? "Abgelaufen" : "Aktiv"}
+                </span>
+              )}
+            </div>
+            <p className="mt-1.5 text-sm text-muted">
+              {currentPlan
+                ? `${currentPlan.label} · ${formatCoins(currentPlan.price)}${
+                    member.feePaidUntil
+                      ? ` · gültig bis ${member.feePaidUntil.toLocaleDateString("de-DE")}`
+                      : ""
+                  }`
+                : "Noch kein Abo zugewiesen."}
+            </p>
+          </div>
+          <Link
+            href="/dashboard/akte"
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110"
+          >
+            Abo verwalten
+          </Link>
         </div>
       </div>
     </div>

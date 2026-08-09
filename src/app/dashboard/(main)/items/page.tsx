@@ -157,7 +157,7 @@ export default async function ItemsPage({
                   const myLoan = myLoanByItem.get(item.id);
 
                   return (
-                    <div key={item.id} className="card flex flex-col overflow-hidden">
+                    <div key={item.id} className="card card-hover flex flex-col overflow-hidden">
                       <div className="flex aspect-[4/5] w-full items-center justify-center bg-surface-2 p-3">
                         {item.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
