@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
@@ -16,7 +17,14 @@ export default async function VerwaltenPage({
   const [items, categories, totalCount] = await Promise.all([
     prisma.item.findMany({
       where: {
-        ...(q ? { name: { contains: q } } : {}),
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: "insensitive" } },
+                { description: { contains: q, mode: "insensitive" } },
+              ],
+            }
+          : {}),
         ...(kategorie ? { categoryId: kategorie } : {}),
       },
       orderBy: { createdAt: "desc" },
@@ -26,6 +34,21 @@ export default async function VerwaltenPage({
     prisma.item.count(),
   ]);
   const linkedCount = items.filter((i) => i.sourceKey).length;
+
+  // Wie auf der Kunden-Item-Seite: immer nach Kategorie gruppiert, auch bei
+  // "Alle Kategorien", statt alphabetisch/nach Erstellungsdatum durcheinander.
+  const groups = new Map<string, { label: string; items: typeof items }>();
+  for (const item of items) {
+    const key = item.category?.id ?? "__none";
+    const label = item.category?.name ?? "Ohne Kategorie";
+    if (!groups.has(key)) groups.set(key, { label, items: [] });
+    groups.get(key)!.items.push(item);
+  }
+  const sortedGroups = [...groups.values()].sort((a, b) => {
+    if (a.label === "Ohne Kategorie") return 1;
+    if (b.label === "Ohne Kategorie") return -1;
+    return a.label.localeCompare(b.label, "de");
+  });
 
   return (
     <div className="space-y-6">
@@ -115,52 +138,61 @@ export default async function VerwaltenPage({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {items.map((item) => (
-              <tr key={item.id}>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-border bg-surface-2">
-                      {item.imageUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+            {sortedGroups.map((group) => (
+              <Fragment key={group.label}>
+                <tr className="bg-surface-2/40">
+                  <td colSpan={5} className="px-4 py-2 text-xs font-semibold text-muted">
+                    {group.label} ({group.items.length})
+                  </td>
+                </tr>
+                {group.items.map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-border bg-surface-2">
+                          {item.imageUrl && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                          )}
+                        </div>
+                        <span className="font-medium">{item.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-muted">{item.category?.name ?? "-"}</td>
+                    <td className="px-4 py-3">
+                      {item.priceStatus === PRICE_STATUS.UNAVAILABLE ? (
+                        <span className="text-xs text-yellow-500">nicht verfügbar</span>
+                      ) : (
+                        <>
+                          {formatCoins(item.averagePrice)}
+                          {item.sourceKey && (
+                            <span className="ml-1.5 text-[11px] text-accent-2">verknüpft</span>
+                          )}
+                        </>
                       )}
-                    </div>
-                    <span className="font-medium">{item.name}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-muted">{item.category?.name ?? "-"}</td>
-                <td className="px-4 py-3">
-                  {item.priceStatus === PRICE_STATUS.UNAVAILABLE ? (
-                    <span className="text-xs text-yellow-500">nicht verfügbar</span>
-                  ) : (
-                    <>
-                      {formatCoins(item.averagePrice)}
-                      {item.sourceKey && (
-                        <span className="ml-1.5 text-[11px] text-accent-2">verknüpft</span>
-                      )}
-                    </>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-muted">{item.quantityTotal}</td>
-                <td className="px-4 py-3">
-                  <div className="flex justify-end gap-2">
-                    <Link
-                      href={`/dashboard/verwaltung/items/${item.id}`}
-                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-surface-2"
-                    >
-                      Bearbeiten
-                    </Link>
-                    <form action={deleteItem.bind(null, item.id)}>
-                      <button
-                        type="submit"
-                        className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/20"
-                      >
-                        Löschen
-                      </button>
-                    </form>
-                  </div>
-                </td>
-              </tr>
+                    </td>
+                    <td className="px-4 py-3 text-muted">{item.quantityTotal}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <Link
+                          href={`/dashboard/verwaltung/items/${item.id}`}
+                          className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-surface-2"
+                        >
+                          Bearbeiten
+                        </Link>
+                        <form action={deleteItem.bind(null, item.id)}>
+                          <button
+                            type="submit"
+                            className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/20"
+                          >
+                            Löschen
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
             ))}
             {items.length === 0 && (
               <tr>

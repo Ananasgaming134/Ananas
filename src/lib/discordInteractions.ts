@@ -11,8 +11,12 @@ import {
 } from "@/lib/constants";
 
 export const PANEL_SELECT_ID = "leihcenter_select_item";
+export const PANEL_CATEGORY_SELECT_ID = "leihcenter_select_category";
+export const CATEGORY_ITEM_SELECT_ID = "leihcenter_select_item_in_category";
 export const BORROW_PREFIX = "leihcenter_borrow:";
 export const RETURN_PREFIX = "leihcenter_return:";
+/** Wert im Kategorie-Select fuer Items ohne zugeordnete Kategorie. */
+export const NO_CATEGORY_VALUE = "__none";
 
 export type DiscordInteractionUser = {
   id: string;

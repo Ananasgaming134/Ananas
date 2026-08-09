@@ -46,12 +46,24 @@ export default function ItemForm({
       ? String(initial.averagePrice)
       : ""
   );
-  const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? "");
   const [sourceUrl, setSourceUrl] = useState(initial?.sourceUrl ?? "");
   const [sourceKey, setSourceKey] = useState(initial?.sourceKey ?? "");
+
+  // Bild-Handling: es gibt genau drei moegliche Quellen fuer das
+  // Vorschaubild, in Prioritaet: frisch ausgewaehlte Datei > aus der
+  // Preis-Datenbank uebernommenes Icon > bereits gespeichertes Bild. Ein
+  // manuelles Bild-URL-Feld gibt es bewusst nicht mehr - Bilder kommen nur
+  // noch per Upload oder automatisch aus der Preis-Datenbank, und werden in
+  // beiden Faellen serverseitig als lokale Datei gespeichert.
+  const existingImageUrl = initial?.imageUrl ?? null;
   const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [priceIconUrl, setPriceIconUrl] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+  const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
   useEffect(() => {
     return () => {
@@ -61,17 +73,32 @@ export default function ItemForm({
 
   function handleFileChange(file: File | null) {
     if (filePreview) URL.revokeObjectURL(filePreview);
+    setImageError(null);
     if (!file) {
       setFilePreview(null);
       return;
     }
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setImageError("Nicht unterstütztes Format. Erlaubt: PNG, JPG, WEBP, GIF.");
+      setFilePreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImageError("Bild ist zu groß (max. 5 MB).");
+      setFilePreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
     setFilePreview(URL.createObjectURL(file));
+    setPriceIconUrl(null);
     setRemoveImage(false);
   }
 
   function handleRemoveImage() {
     setRemoveImage(true);
-    setImageUrl("");
+    setPriceIconUrl(null);
+    setImageError(null);
     handleFileChange(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
@@ -119,15 +146,17 @@ export default function ItemForm({
     }
     setAveragePrice(String(result.averagePrice));
     if (result.icon) {
-      setImageUrl(result.icon);
-      setRemoveImage(false);
       handleFileChange(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      setPriceIconUrl(result.icon);
+      setRemoveImage(false);
     }
     setSourceKey(result.key);
     setResults([]);
     setQuery("");
   }
+
+  const previewSrc = filePreview || priceIconUrl || (!removeImage ? existingImageUrl : null);
 
   return (
     <form action={action} encType="multipart/form-data" className="card space-y-5 p-6">
@@ -297,54 +326,32 @@ export default function ItemForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted" htmlFor="imageFile">
-            Bild hochladen
-          </label>
-          <input
-            ref={fileInputRef}
-            id="imageFile"
-            name="imageFile"
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              const file = e.target.files?.[0] ?? null;
-              handleFileChange(file);
-              if (file) setImageUrl("");
-            }}
-            className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none file:mr-3 file:rounded-md file:border-0 file:bg-surface-2 file:px-3 file:py-1.5 file:text-xs file:text-foreground"
-          />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted" htmlFor="imageUrl">
-            oder Bild-URL
-          </label>
-          <input
-            id="imageUrl"
-            name="imageUrl"
-            type="url"
-            value={imageUrl ?? ""}
-            onChange={(e) => {
-              setImageUrl(e.target.value);
-              setRemoveImage(false);
-              if (e.target.value) handleFileChange(null);
-            }}
-            placeholder="https://..."
-            className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2"
-          />
-        </div>
-      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-muted" htmlFor="imageFile">
+          Bild
+        </label>
+        <input
+          ref={fileInputRef}
+          id="imageFile"
+          name="imageFile"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
+          className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none file:mr-3 file:rounded-md file:border-0 file:bg-surface-2 file:px-3 file:py-1.5 file:text-xs file:text-foreground"
+        />
+        <p className="mt-1.5 text-xs text-muted">
+          PNG, JPG, WEBP oder GIF, max. 5&nbsp;MB. Wird direkt auf dem Server gespeichert.
+        </p>
+        {imageError && <p className="mt-1.5 text-xs text-red-400">{imageError}</p>}
 
-      <input type="hidden" name="removeImage" value={removeImage ? "true" : "false"} />
+        <input type="hidden" name="removeImage" value={removeImage ? "true" : "false"} />
+        <input type="hidden" name="priceIconUrl" value={priceIconUrl ?? ""} />
 
-      {(filePreview || imageUrl) && !removeImage ? (
-        <div>
-          <p className="mb-1.5 text-xs font-medium text-muted">Bildvorschau</p>
-          <div className="flex items-center gap-3">
+        {previewSrc ? (
+          <div className="mt-3 flex items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={filePreview || imageUrl}
+              src={previewSrc}
               alt="Item-Bildvorschau"
               className="h-24 w-24 rounded-lg border border-border object-cover"
             />
@@ -356,10 +363,10 @@ export default function ItemForm({
               Bild entfernen
             </button>
           </div>
-        </div>
-      ) : removeImage ? (
-        <p className="text-xs text-muted">Bild wird beim Speichern entfernt.</p>
-      ) : null}
+        ) : removeImage ? (
+          <p className="mt-3 text-xs text-muted">Bild wird beim Speichern entfernt.</p>
+        ) : null}
+      </div>
 
       <SubmitButton label={submitLabel} />
     </form>

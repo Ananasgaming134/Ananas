@@ -2,10 +2,12 @@ import { InteractionResponseType, InteractionType, verifyKey } from "discord-int
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { borrowItemCore, returnLoanCore } from "@/lib/loans";
-import { postOrUpdatePanel, refreshPanelsQuietly } from "@/lib/discordPanel";
+import { buildCategoryItemSelectPayload, postOrUpdatePanel, refreshPanelsQuietly } from "@/lib/discordPanel";
 import { RENEW_PREFIX, setSubscriptionPlanCore } from "@/lib/subscriptions";
 import {
   BORROW_PREFIX,
+  CATEGORY_ITEM_SELECT_ID,
+  PANEL_CATEGORY_SELECT_ID,
   PANEL_SELECT_ID,
   RETURN_PREFIX,
   buildAkteEmbedForDiscord,
@@ -203,7 +205,23 @@ async function handleComponent(interaction: DiscordInteractionPayload) {
   if (customId === PANEL_SELECT_ID) {
     const itemId: string | undefined = interaction.data?.values?.[0];
     if (!itemId) return ephemeral("Kein Item ausgewählt.");
-    return respondWithItemActions(itemId, interaction.guild_id, memberRoles, discordUser);
+    return respondWithItemActions(itemId, interaction.guild_id, memberRoles, discordUser, false);
+  }
+
+  if (customId === PANEL_CATEGORY_SELECT_ID) {
+    const categoryValue: string | undefined = interaction.data?.values?.[0];
+    if (!categoryValue) return ephemeral("Keine Kategorie ausgewählt.");
+    const payload = await buildCategoryItemSelectPayload(categoryValue);
+    return Response.json({
+      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+      data: { ...payload, flags: EPHEMERAL },
+    });
+  }
+
+  if (customId === CATEGORY_ITEM_SELECT_ID) {
+    const itemId: string | undefined = interaction.data?.values?.[0];
+    if (!itemId) return ephemeral("Kein Item ausgewählt.");
+    return respondWithItemActions(itemId, interaction.guild_id, memberRoles, discordUser, true);
   }
 
   if (customId.startsWith(BORROW_PREFIX)) {
@@ -268,7 +286,8 @@ async function respondWithItemActions(
   itemId: string,
   guildId: string | undefined,
   memberRoles: string[],
-  discordUser: DiscordInteractionUser
+  discordUser: DiscordInteractionUser,
+  updateInPlace: boolean
 ) {
   const item = await prisma.item.findUnique({ where: { id: itemId } });
   if (!item) return ephemeral("Item nicht gefunden.");
@@ -314,7 +333,7 @@ async function respondWithItemActions(
       : "Aktuell nicht verfügbar.";
 
   return Response.json({
-    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+    type: updateInPlace ? InteractionResponseType.UPDATE_MESSAGE : InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
     data: {
       content: `**${item.name}**\n${status}${
         permission.ok ? "" : `\n\n⚠️ ${permission.error}`

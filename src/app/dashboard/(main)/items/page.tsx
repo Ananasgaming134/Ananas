@@ -17,7 +17,14 @@ export default async function ItemsPage({
   const [items, activeLoans, myActiveLoans, categories, totalCount] = await Promise.all([
     prisma.item.findMany({
       where: {
-        ...(q ? { name: { contains: q } } : {}),
+        ...(q
+          ? {
+              OR: [
+                { name: { contains: q, mode: "insensitive" } },
+                { description: { contains: q, mode: "insensitive" } },
+              ],
+            }
+          : {}),
         ...(kategorie ? { categoryId: kategorie } : {}),
       },
       orderBy: { name: "asc" },
@@ -38,6 +45,22 @@ export default async function ItemsPage({
   const activeCountByItem = new Map(activeLoans.map((l) => [l.itemId, l._count.itemId]));
   const myLoanByItem = new Map(myActiveLoans.map((l) => [l.itemId, l]));
   const isFiltered = Boolean(q || kategorie);
+
+  // Items werden immer nach Kategorie gruppiert dargestellt - auch bei
+  // "Alle Kategorien" - statt alphabetisch quer durcheinander, damit man sich
+  // im Bestand zurechtfindet. "Ohne Kategorie" steht dabei immer zuletzt.
+  const groups = new Map<string, { label: string; items: typeof items }>();
+  for (const item of items) {
+    const key = item.category?.id ?? "__none";
+    const label = item.category?.name ?? "Ohne Kategorie";
+    if (!groups.has(key)) groups.set(key, { label, items: [] });
+    groups.get(key)!.items.push(item);
+  }
+  const sortedGroups = [...groups.values()].sort((a, b) => {
+    if (a.label === "Ohne Kategorie") return 1;
+    if (b.label === "Ohne Kategorie") return -1;
+    return a.label.localeCompare(b.label, "de");
+  });
 
   return (
     <div className="space-y-6">
@@ -106,79 +129,88 @@ export default async function ItemsPage({
           {!isFiltered && isOwner && " Lege das erste Item unter „Items verwalten“ an."}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((item) => {
-            const borrowedCount = activeCountByItem.get(item.id) ?? 0;
-            const available = item.quantityTotal - borrowedCount;
-            const myLoan = myLoanByItem.get(item.id);
+        <div className="space-y-8">
+          {sortedGroups.map((group) => (
+            <div key={group.label} className="space-y-4">
+              <h2 className="text-sm font-semibold text-muted">
+                {group.label}
+                <span className="ml-2 text-xs font-normal text-muted/60">
+                  ({group.items.length})
+                </span>
+              </h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {group.items.map((item) => {
+                  const borrowedCount = activeCountByItem.get(item.id) ?? 0;
+                  const available = item.quantityTotal - borrowedCount;
+                  const myLoan = myLoanByItem.get(item.id);
 
-            return (
-              <div key={item.id} className="card flex flex-col overflow-hidden">
-                <div className="aspect-video w-full bg-surface-2">
-                  {item.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={item.imageUrl}
-                      alt={item.name}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-xs text-muted">
-                      Kein Bild
+                  return (
+                    <div key={item.id} className="card flex flex-col overflow-hidden">
+                      <div className="aspect-video w-full bg-surface-2">
+                        {item.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs text-muted">
+                            Kein Bild
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-1 flex-col p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="text-sm font-semibold">{item.name}</h3>
+                          <span className="shrink-0 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-muted">
+                            {available > 0 ? `${available}/${item.quantityTotal} frei` : "verliehen"}
+                          </span>
+                        </div>
+
+                        <div className="mt-auto pt-4">
+                          {myLoan ? (
+                            <>
+                              <p className="mb-2 text-center text-xs text-muted">
+                                Ausgeliehen seit{" "}
+                                <ElapsedTime since={myLoan.borrowedAt} className="text-accent-2" />
+                              </p>
+                              <form action={returnLoan.bind(null, myLoan.id)}>
+                                <button
+                                  type="submit"
+                                  className="w-full rounded-lg border border-accent-2/40 bg-accent-2/10 px-3 py-2 text-sm font-medium text-accent-2 transition hover:bg-accent-2/20"
+                                >
+                                  Zurückgeben
+                                </button>
+                              </form>
+                            </>
+                          ) : available > 0 ? (
+                            <form action={borrowItem.bind(null, item.id)}>
+                              <button
+                                type="submit"
+                                className="w-full rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-black transition hover:brightness-110"
+                              >
+                                Ausleihen
+                              </button>
+                            </form>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              className="w-full cursor-not-allowed rounded-lg border border-border px-3 py-2 text-sm text-muted"
+                            >
+                              Nicht verfügbar
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
-
-                <div className="flex flex-1 flex-col p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-sm font-semibold">{item.name}</h3>
-                    <span className="shrink-0 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-muted">
-                      {available > 0 ? `${available}/${item.quantityTotal} frei` : "verliehen"}
-                    </span>
-                  </div>
-
-                  {item.category && (
-                    <p className="mt-0.5 text-xs text-muted">{item.category.name}</p>
-                  )}
-
-                  <div className="mt-auto pt-4">
-                    {myLoan ? (
-                      <>
-                        <p className="mb-2 text-center text-xs text-muted">
-                          Ausgeliehen seit <ElapsedTime since={myLoan.borrowedAt} className="text-accent-2" />
-                        </p>
-                        <form action={returnLoan.bind(null, myLoan.id)}>
-                          <button
-                            type="submit"
-                            className="w-full rounded-lg border border-accent-2/40 bg-accent-2/10 px-3 py-2 text-sm font-medium text-accent-2 transition hover:bg-accent-2/20"
-                          >
-                            Zurückgeben
-                          </button>
-                        </form>
-                      </>
-                    ) : available > 0 ? (
-                      <form action={borrowItem.bind(null, item.id)}>
-                        <button
-                          type="submit"
-                          className="w-full rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-black transition hover:brightness-110"
-                        >
-                          Ausleihen
-                        </button>
-                      </form>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled
-                        className="w-full cursor-not-allowed rounded-lg border border-border px-3 py-2 text-sm text-muted"
-                      >
-                        Nicht verfügbar
-                      </button>
-                    )}
-                  </div>
-                </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>

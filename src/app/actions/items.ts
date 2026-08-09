@@ -11,16 +11,58 @@ import { fetchPriceSourceItems, searchPriceSourceItems } from "@/lib/priceSource
 import { refreshPanelsQuietly } from "@/lib/discordPanel";
 import { PRICE_STATUS, ROLES } from "@/lib/constants";
 
-async function saveUploadedImage(file: File | null): Promise<string | null> {
-  if (!file || file.size === 0) return null;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const ext = (file.type.split("/")[1] || "png").replace("jpeg", "jpg").replace(/[^a-z0-9]/gi, "");
-  const filename = `${crypto.randomUUID()}.${ext || "png"}`;
+function extensionForMimeType(mimeType: string): string {
+  const ext = (mimeType.split("/")[1] || "png").replace("jpeg", "jpg").replace(/[^a-z0-9]/gi, "");
+  return ext || "png";
+}
+
+async function writeImageFile(buffer: Buffer, mimeType: string): Promise<string> {
+  const filename = `${crypto.randomUUID()}.${extensionForMimeType(mimeType)}`;
   const uploadDir = path.join(process.cwd(), "public", "uploads");
   await fs.mkdir(uploadDir, { recursive: true });
   await fs.writeFile(path.join(uploadDir, filename), buffer);
   return `/uploads/${filename}`;
+}
+
+/**
+ * Speichert eine hochgeladene Bilddatei lokal. Ungueltige Dateien (falsches
+ * Format, zu groß) werden ignoriert statt den ganzen Speichervorgang mit
+ * einem Server-Fehler abzubrechen - das Formular validiert Format/Größe
+ * bereits clientseitig, das hier ist nur die letzte Absicherung.
+ */
+async function saveUploadedImage(file: File | null): Promise<string | null> {
+  if (!file || file.size === 0) return null;
+  if (!ALLOWED_IMAGE_TYPES.has(file.type) || file.size > MAX_IMAGE_BYTES) return null;
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return writeImageFile(buffer, file.type);
+}
+
+/**
+ * Laedt ein von der Preis-Datenbank vorgeschlagenes Icon herunter und
+ * speichert es lokal, statt die externe URL direkt in der Datenbank zu
+ * hinterlegen - dadurch bleiben alle Item-Bilder konsistent lokale Dateien,
+ * unabhaengig davon ob sie hochgeladen oder aus der Preisquelle uebernommen
+ * wurden. Schlaegt der Download fehl (Quelle nicht erreichbar, kein Bild),
+ * wird das Item trotzdem ohne Bild gespeichert statt den ganzen Vorgang
+ * abzubrechen.
+ */
+async function downloadPriceSourceIcon(url: string | null): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
+    if (!ALLOWED_IMAGE_TYPES.has(contentType)) return null;
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.byteLength === 0 || buffer.byteLength > MAX_IMAGE_BYTES) return null;
+    return writeImageFile(buffer, contentType);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -48,7 +90,7 @@ function readItemFields(formData: FormData) {
   const quantityRaw = String(formData.get("quantityTotal") ?? "1").trim();
   const quantityTotal = Math.max(1, parseInt(quantityRaw, 10) || 1);
 
-  const imageUrlInput = String(formData.get("imageUrl") ?? "").trim();
+  const priceIconUrl = String(formData.get("priceIconUrl") ?? "").trim() || null;
   const removeImage = String(formData.get("removeImage") ?? "") === "true";
   const sourceKey = String(formData.get("sourceKey") ?? "").trim() || null;
 
@@ -59,7 +101,7 @@ function readItemFields(formData: FormData) {
     sourceUrl,
     averagePrice,
     quantityTotal,
-    imageUrlInput,
+    priceIconUrl,
     removeImage,
     sourceKey,
   };
@@ -78,7 +120,9 @@ export async function createItem(formData: FormData) {
   if (!fields.name) return;
 
   const uploadedImage = await saveUploadedImage(formData.get("imageFile") as File | null);
-  const imageUrl = uploadedImage || (fields.removeImage ? null : fields.imageUrlInput) || null;
+  const imageUrl =
+    uploadedImage ||
+    (fields.removeImage ? null : await downloadPriceSourceIcon(fields.priceIconUrl));
 
   const item = await prisma.item.create({
     data: {
@@ -120,7 +164,7 @@ export async function updateItem(itemId: string, formData: FormData) {
     ? uploadedImage
     : fields.removeImage
       ? null
-      : fields.imageUrlInput || existing.imageUrl;
+      : (await downloadPriceSourceIcon(fields.priceIconUrl)) || existing.imageUrl;
 
   // Altes lokal hochgeladenes Bild aufraeumen, sobald es ersetzt oder entfernt wird.
   if (existing.imageUrl && existing.imageUrl !== imageUrl) {
