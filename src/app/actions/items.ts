@@ -24,7 +24,11 @@ async function writeImageFile(buffer: Buffer, mimeType: string): Promise<string>
   const uploadDir = path.join(process.cwd(), "public", "uploads");
   await fs.mkdir(uploadDir, { recursive: true });
   await fs.writeFile(path.join(uploadDir, filename), buffer);
-  return `/uploads/${filename}`;
+  // Ueber die API-Route ausliefern, nicht direkt aus public/uploads: next start
+  // cached die Liste der public/-Dateien beim Prozessstart, wodurch Bilder,
+  // die nach dem letzten Deploy hochgeladen werden, sonst bis zum naechsten
+  // Neustart mit 404 beantwortet wuerden (siehe src/app/api/uploads/[filename]/route.ts).
+  return `/api/uploads/${filename}`;
 }
 
 /**
@@ -73,8 +77,16 @@ async function downloadPriceSourceIcon(url: string | null): Promise<string | nul
  * scheitert.
  */
 async function deleteUploadedImageIfLocal(imageUrl: string | null) {
-  if (!imageUrl || !imageUrl.startsWith("/uploads/")) return;
-  const filePath = path.join(process.cwd(), "public", imageUrl);
+  if (!imageUrl) return;
+  // Beide Formen abfangen: alte Items zeigen noch auf /uploads/..., neue auf
+  // /api/uploads/... (siehe writeImageFile oben).
+  const filename = imageUrl.startsWith("/api/uploads/")
+    ? imageUrl.slice("/api/uploads/".length)
+    : imageUrl.startsWith("/uploads/")
+      ? imageUrl.slice("/uploads/".length)
+      : null;
+  if (!filename) return;
+  const filePath = path.join(process.cwd(), "public", "uploads", filename);
   await fs.unlink(filePath).catch(() => {});
 }
 
