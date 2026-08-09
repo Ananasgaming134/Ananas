@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// SQLite kennt keine nativen Enums. Die erlaubten Werte werden stattdessen
+// als String gespeichert und in src/lib/constants.ts als TS-Konstanten
+// gepflegt (Role, MemberStatus, LoanStatus, LoanChannel, PriceStatus).
+
+// Dauerhaftes Mitglieder-Archiv. Wird angelegt, sobald jemand erstmals eine
+// LeihCenter-Rolle in Discord erhält, und bleibt auch nach Ausschluss/Bann
+// durchsuchbar erhalten.
+model Member {
+  id             String   @id @default(cuid())
+  discordId      String   @unique
+  username       String
+  displayName    String
+  minecraftName  String
+  avatarUrl      String?
+  role           String   @default("KUNDE")
+  status         String   @default("ACTIVE")
+  // Zufaellig vergebene, eindeutige Kundennummer - wird als Verwendungszweck
+  // ("Verleih <Kundennummer>") bei Business-Card-Ueberweisungen genutzt, um
+  // Zahlungen zuverlaessig einem Mitglied zuzuordnen (siehe src/lib/payments.ts).
+  customerNumber String?  @unique
+
+  monthlyFee     Int      @default(5000000)
+  feePaidUntil   DateTime?
+  subscriptionPlan String?
+  // Wann zuletzt eine Ablauf-Erinnerung fuer die AKTUELLE Laufzeit (feePaidUntil)
+  // in den Discord-Abo-Kanal gepostet wurde. Verhindert Spam bei wiederholten
+  // Checks; wird bei jeder Verlaengerung implizit ungueltig (neues feePaidUntil).
+  subscriptionReminderSentAt DateTime?
+
+  joinedAt       DateTime @default(now())
+  revokedAt      DateTime?
+  revokedReason  String?
+  bannedAt       DateTime?
+  bannedReason   String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  loans          Loan[]
+  notesAbout     MemberNote[] @relation("NotesAboutMember")
+  notesAuthored  MemberNote[] @relation("NotesByAuthor")
+  auditAsActor   AuditLog[]   @relation("AuditActor")
+  auditAsTarget  AuditLog[]   @relation("AuditTarget")
+  payments       Payment[]
+
+  @@index([status])
+  @@index([role])
+}
+
+// Erkannte Zahlungen aus dem Discord-Zahlungskanal (Business-Card-System
+// eines anderen Bots). Wird per Discord-Nachrichten-ID dedupliziert, damit
+// derselbe Eingang nie doppelt verarbeitet wird. Betrag steht in der
+// Business-Card-Waehrung (Cedis, ₵) - das ist eine andere Skala als unsere
+// $-Abo-Preise, deshalb wird hier NIE automatisch ein Abo-Plan zugeordnet,
+// sondern von Aufsicht/Owner manuell bestaetigt.
+model Payment {
+  id               String   @id @default(cuid())
+  discordMessageId String   @unique
+  amount           Int
+  discordUsername  String
+  reason           String?
+  receivedAt       DateTime
+  status           String   @default("PENDING") // PENDING | APPLIED | IGNORED
+  memberId         String?
+  member           Member?  @relation(fields: [memberId], references: [id])
+  appliedPlanId    String?
+
+  createdAt        DateTime @default(now())
+
+  @@index([status])
+}
+
+model Item {
+  id             String    @id @default(cuid())
+  name           String
+  description    String?
+  imageUrl       String?
+  sourceUrl      String?
+  sourceKey      String?
+  averagePrice   Int?
+  priceStatus    String    @default("MANUAL")
+  priceCheckedAt DateTime?
+  categoryId     String?
+  category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  quantityTotal  Int       @default(1)
+  createdById    String?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  loans          Loan[]
+
+  @@index([categoryId])
+  @@index([sourceKey])
+}
+
+// Item-Kategorien, vom Owner frei anlegbar (z.B. Werkzeug, Ruestung, Deko).
+// Wird zum Einsortieren und Filtern/Suchen im Item-Katalog genutzt.
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  items     Item[]
+}
+
+model Loan {
+  id          String    @id @default(cuid())
+  itemId      String
+  item        Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  memberId    String
+  member      Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  channel     String    @default("WEB")
+  status      String    @default("ACTIVE")
+
+  borrowedAt  DateTime  @default(now())
+  dueAt       DateTime?
+  returnedAt  DateTime?
+  notes       String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([memberId])
+  @@index([itemId])
+  @@index([status])
+}
+
+model MemberNote {
+  id        String   @id @default(cuid())
+  memberId  String
+  member    Member   @relation("NotesAboutMember", fields: [memberId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    Member   @relation("NotesByAuthor", fields: [authorId], references: [id])
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([memberId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     Member?  @relation("AuditActor", fields: [actorId], references: [id])
+  targetId  String?
+  target    Member?  @relation("AuditTarget", fields: [targetId], references: [id])
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([action])
+}
+
+// Ein Discord-Server, auf dem der Ausleih-Bot ein sich selbst
+// aktualisierendes Item-Panel in einem bestimmten Kanal pflegt. Der Bot muss
+// dem Server zusaetzlich manuell per Invite-Link hinzugefuegt werden - das
+// kann nicht per API ausgeloest werden.
+model BotDeployment {
+  id              String    @id @default(cuid())
+  guildId         String    @unique
+  guildName       String?
+  channelId       String
+  borrowRoleId    String
+  panelMessageId  String?
+
+  // Optionaler zweiter Kanal, in dem nur die aktuell ausgeliehenen Items
+  // mit Discord-nativem Live-Timestamp (<t:...:R>) angezeigt werden.
+  statusChannelId String?
+  statusMessageId String?
+
+  active          Boolean   @default(true)
+  createdById     String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
