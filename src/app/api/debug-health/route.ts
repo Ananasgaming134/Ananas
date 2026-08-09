@@ -3,12 +3,10 @@ import { prisma } from "@/lib/prisma";
 
 function maskUrl(url: string | undefined) {
   if (!url) return null;
+  const masked = url.replace(/:[^:@]+@/, ":***@");
   return {
     length: url.length,
-    start: url.slice(0, 20),
-    end: url.slice(-15),
-    hasNewline: /[\r\n]/.test(url),
-    hasSpace: /\s/.test(url),
+    json: JSON.stringify(masked),
   };
 }
 
