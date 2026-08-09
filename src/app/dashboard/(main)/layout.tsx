@@ -4,6 +4,7 @@ import DashboardNav from "@/components/DashboardNav";
 import SignOutButton from "@/components/SignOutButton";
 import RoleBadge from "@/components/RoleBadge";
 import AnimatedBackground from "@/components/AnimatedBackground";
+import RoleWatcher from "@/components/RoleWatcher";
 import { SITE_NAME } from "@/lib/constants";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -11,6 +12,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="relative min-h-screen">
+      <RoleWatcher />
       <AnimatedBackground />
 
       <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6 sm:px-6">

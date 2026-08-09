@@ -71,6 +71,38 @@ export async function resolveRole(discordUserId: string, accessToken?: string): 
   return null;
 }
 
+export type RoleCheckResult =
+  | { status: "valid"; role: RoleValue }
+  | { status: "revoked" } // eindeutig bestaetigt: keine gueltige Rolle mehr / Server verlassen
+  | { status: "error" }; // Pruefung fehlgeschlagen (Rate-Limit, Netzwerk) - nicht als Entzug werten
+
+/**
+ * Fuer die periodische Live-Pruefung waehrend einer aktiven Sitzung (siehe
+ * /api/auth/role-check). Unterscheidet bewusst zwischen "eindeutig keine
+ * Berechtigung mehr" (404 = Server verlassen, oder keine passende Rolle) und
+ * "Pruefung fehlgeschlagen" (Discord-API nicht erreichbar/Rate-Limit) - nur
+ * ersteres darf zum automatischen Abmelden fuehren, sonst wuerde ein
+ * kurzzeitiger API-Ausfall alle eingeloggten Nutzer rauswerfen.
+ */
+export async function checkRoleLive(discordUserId: string): Promise<RoleCheckResult> {
+  if (!DISCORD_GUILD_ID || !DISCORD_BOT_TOKEN) return { status: "error" };
+
+  try {
+    const res = await fetch(
+      `https://discord.com/api/v10/guilds/${DISCORD_GUILD_ID}/members/${discordUserId}`,
+      { headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}` }, cache: "no-store" }
+    );
+    if (res.status === 404) return { status: "revoked" };
+    if (!res.ok) return { status: "error" };
+
+    const member = (await res.json()) as { roles?: string[] };
+    const role = mapRolesToLeihCenterRole(member.roles ?? []);
+    return role ? { status: "valid", role } : { status: "revoked" };
+  } catch {
+    return { status: "error" };
+  }
+}
+
 export type DiscordGuildMember = {
   discordId: string;
   username: string;
