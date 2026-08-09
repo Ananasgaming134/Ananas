@@ -158,13 +158,13 @@ export default async function ItemsPage({
 
                   return (
                     <div key={item.id} className="card flex flex-col overflow-hidden">
-                      <div className="aspect-video w-full bg-surface-2">
+                      <div className="flex aspect-[4/5] w-full items-center justify-center bg-surface-2 p-3">
                         {item.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={item.imageUrl}
                             alt={item.name}
-                            className="h-full w-full object-cover"
+                            className="h-full w-full object-contain"
                           />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-xs text-muted">

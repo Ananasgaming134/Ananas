@@ -187,10 +187,10 @@ export default function ItemForm({
                   onClick={() => pickResult(result)}
                   className="flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-1.5 text-left text-sm transition hover:border-border hover:bg-surface-2"
                 >
-                  <div className="h-8 w-8 shrink-0 overflow-hidden rounded border border-border bg-surface-2">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded border border-border bg-surface-2 p-0.5">
                     {result.icon && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={result.icon} alt="" className="h-full w-full object-cover" />
+                      <img src={result.icon} alt="" className="h-full w-full object-contain" />
                     )}
                   </div>
                   <span className="flex-1 truncate">{result.name}</span>
@@ -349,12 +349,10 @@ export default function ItemForm({
 
         {previewSrc ? (
           <div className="mt-3 flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={previewSrc}
-              alt="Item-Bildvorschau"
-              className="h-24 w-24 rounded-lg border border-border object-cover"
-            />
+            <div className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface-2 p-1.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewSrc} alt="Item-Bildvorschau" className="h-full w-full object-contain" />
+            </div>
             <button
               type="button"
               onClick={handleRemoveImage}

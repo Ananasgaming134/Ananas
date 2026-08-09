@@ -149,10 +149,10 @@ export default async function VerwaltenPage({
                   <tr key={item.id}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-border bg-surface-2">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface-2 p-1">
                           {item.imageUrl && (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                            <img src={item.imageUrl} alt={item.name} className="h-full w-full object-contain" />
                           )}
                         </div>
                         <span className="font-medium">{item.name}</span>
