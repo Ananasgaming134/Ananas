@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import AnimatedBackground from "@/components/AnimatedBackground";
-import VoxelLandscape from "@/components/VoxelLandscape";
 import HowItWorks from "@/components/HowItWorks";
 import FaqSection from "@/components/FaqSection";
 import StatCard from "@/components/StatCard";
@@ -81,10 +80,6 @@ export default async function Home() {
             Aktuelle Zahlen ansehen
           </a>
         </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-6 pb-20">
-        <VoxelLandscape />
       </section>
 
       <HowItWorks />
