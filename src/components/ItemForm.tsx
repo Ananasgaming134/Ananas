@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useFormStatus } from "react-dom";
 import { searchPriceSourceAction } from "@/app/actions/items";
 import { formatCoins } from "@/lib/constants";
 
@@ -48,6 +49,32 @@ export default function ItemForm({
   const [imageUrl, setImageUrl] = useState(initial?.imageUrl ?? "");
   const [sourceUrl, setSourceUrl] = useState(initial?.sourceUrl ?? "");
   const [sourceKey, setSourceKey] = useState(initial?.sourceKey ?? "");
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (filePreview) URL.revokeObjectURL(filePreview);
+    };
+  }, [filePreview]);
+
+  function handleFileChange(file: File | null) {
+    if (filePreview) URL.revokeObjectURL(filePreview);
+    if (!file) {
+      setFilePreview(null);
+      return;
+    }
+    setFilePreview(URL.createObjectURL(file));
+    setRemoveImage(false);
+  }
+
+  function handleRemoveImage() {
+    setRemoveImage(true);
+    setImageUrl("");
+    handleFileChange(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PriceSourceResult[]>([]);
@@ -91,7 +118,12 @@ export default function ItemForm({
       }
     }
     setAveragePrice(String(result.averagePrice));
-    if (result.icon) setImageUrl(result.icon);
+    if (result.icon) {
+      setImageUrl(result.icon);
+      setRemoveImage(false);
+      handleFileChange(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
     setSourceKey(result.key);
     setResults([]);
     setQuery("");
@@ -271,10 +303,16 @@ export default function ItemForm({
             Bild hochladen
           </label>
           <input
+            ref={fileInputRef}
             id="imageFile"
             name="imageFile"
             type="file"
             accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0] ?? null;
+              handleFileChange(file);
+              if (file) setImageUrl("");
+            }}
             className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none file:mr-3 file:rounded-md file:border-0 file:bg-surface-2 file:px-3 file:py-1.5 file:text-xs file:text-foreground"
           />
         </div>
@@ -287,31 +325,56 @@ export default function ItemForm({
             name="imageUrl"
             type="url"
             value={imageUrl ?? ""}
-            onChange={(e) => setImageUrl(e.target.value)}
+            onChange={(e) => {
+              setImageUrl(e.target.value);
+              setRemoveImage(false);
+              if (e.target.value) handleFileChange(null);
+            }}
             placeholder="https://..."
             className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2"
           />
         </div>
       </div>
 
-      {imageUrl && (
+      <input type="hidden" name="removeImage" value={removeImage ? "true" : "false"} />
+
+      {(filePreview || imageUrl) && !removeImage ? (
         <div>
           <p className="mb-1.5 text-xs font-medium text-muted">Bildvorschau</p>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={imageUrl}
-            alt="Item-Bildvorschau"
-            className="h-24 w-24 rounded-lg border border-border object-cover"
-          />
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={filePreview || imageUrl}
+              alt="Item-Bildvorschau"
+              className="h-24 w-24 rounded-lg border border-border object-cover"
+            />
+            <button
+              type="button"
+              onClick={handleRemoveImage}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-foreground"
+            >
+              Bild entfernen
+            </button>
+          </div>
         </div>
-      )}
+      ) : removeImage ? (
+        <p className="text-xs text-muted">Bild wird beim Speichern entfernt.</p>
+      ) : null}
 
-      <button
-        type="submit"
-        className="rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-black transition hover:brightness-110"
-      >
-        {submitLabel}
-      </button>
+      <SubmitButton label={submitLabel} />
     </form>
+  );
+}
+
+function SubmitButton({ label }: { label: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      {pending ? "Wird gespeichert..." : label}
+    </button>
   );
 }

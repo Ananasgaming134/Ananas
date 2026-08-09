@@ -23,6 +23,19 @@ async function saveUploadedImage(file: File | null): Promise<string | null> {
   return `/uploads/${filename}`;
 }
 
+/**
+ * Loescht ein frueher lokal hochgeladenes Bild von der Platte, wenn es durch
+ * ein neues ersetzt oder entfernt wurde. Nur fuer Pfade unter /uploads/ -
+ * extern verlinkte Bild-URLs werden nie angefasst. Schlaegt bewusst leise
+ * fehl (Datei evtl. schon weg), damit das eigentliche Speichern nie daran
+ * scheitert.
+ */
+async function deleteUploadedImageIfLocal(imageUrl: string | null) {
+  if (!imageUrl || !imageUrl.startsWith("/uploads/")) return;
+  const filePath = path.join(process.cwd(), "public", imageUrl);
+  await fs.unlink(filePath).catch(() => {});
+}
+
 function readItemFields(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const categoryId = String(formData.get("categoryId") ?? "").trim() || null;
@@ -36,6 +49,7 @@ function readItemFields(formData: FormData) {
   const quantityTotal = Math.max(1, parseInt(quantityRaw, 10) || 1);
 
   const imageUrlInput = String(formData.get("imageUrl") ?? "").trim();
+  const removeImage = String(formData.get("removeImage") ?? "") === "true";
   const sourceKey = String(formData.get("sourceKey") ?? "").trim() || null;
 
   return {
@@ -46,6 +60,7 @@ function readItemFields(formData: FormData) {
     averagePrice,
     quantityTotal,
     imageUrlInput,
+    removeImage,
     sourceKey,
   };
 }
@@ -63,7 +78,7 @@ export async function createItem(formData: FormData) {
   if (!fields.name) return;
 
   const uploadedImage = await saveUploadedImage(formData.get("imageFile") as File | null);
-  const imageUrl = uploadedImage || fields.imageUrlInput || null;
+  const imageUrl = uploadedImage || (fields.removeImage ? null : fields.imageUrlInput) || null;
 
   const item = await prisma.item.create({
     data: {
@@ -101,7 +116,16 @@ export async function updateItem(itemId: string, formData: FormData) {
   if (!fields.name) return;
 
   const uploadedImage = await saveUploadedImage(formData.get("imageFile") as File | null);
-  const imageUrl = uploadedImage || fields.imageUrlInput || existing.imageUrl;
+  const imageUrl = uploadedImage
+    ? uploadedImage
+    : fields.removeImage
+      ? null
+      : fields.imageUrlInput || existing.imageUrl;
+
+  // Altes lokal hochgeladenes Bild aufraeumen, sobald es ersetzt oder entfernt wird.
+  if (existing.imageUrl && existing.imageUrl !== imageUrl) {
+    await deleteUploadedImageIfLocal(existing.imageUrl);
+  }
 
   const sourceKeyChanged = fields.sourceKey && fields.sourceKey !== existing.sourceKey;
 
@@ -139,6 +163,7 @@ export async function deleteItem(itemId: string) {
   if (!existing) return;
 
   await prisma.item.delete({ where: { id: itemId } });
+  await deleteUploadedImageIfLocal(existing.imageUrl);
 
   await logAction({
     actorId: member.id,
