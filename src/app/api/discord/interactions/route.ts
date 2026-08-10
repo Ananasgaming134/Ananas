@@ -18,6 +18,7 @@ import {
   type DiscordInteractionPayload,
   type DiscordInteractionUser,
 } from "@/lib/discordInteractions";
+import { resetWordChain } from "@/lib/wordChain";
 import { LOAN_CHANNEL, LOAN_STATUS, MEMBER_STATUS } from "@/lib/constants";
 
 const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY ?? "";
@@ -75,6 +76,16 @@ async function handleCommand(interaction: DiscordInteractionPayload) {
 
   if (commandName === "setup") {
     return handleSetupCommand(interaction, invokerRoles);
+  }
+
+  if (commandName === "wortketten-reset") {
+    if (!hasStaffRole(invokerRoles)) {
+      return ephemeral("Nur Aufsichtspersonen und Owner können das Wortkettenspiel zurücksetzen.");
+    }
+    const channelId = interaction.channel_id;
+    if (!channelId) return ephemeral("Nur innerhalb eines Server-Kanals nutzbar.");
+    await resetWordChain(channelId);
+    return ephemeral("✅ Wortkettenspiel wurde zurückgesetzt. Das nächste gültige Wort startet die Kette neu.");
   }
 
   if (commandName !== "akte") {

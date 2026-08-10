@@ -176,6 +176,36 @@ model AuditLog {
   @@index([action])
 }
 
+// Wortkettenspiel in einem festen Discord-Kanal: ein Wort reinschreiben, das
+// mit dem letzten Buchstaben des vorherigen Wortes beginnt. Ein Spiel pro
+// Kanal (channelId eindeutig); "/wortketten-reset" loescht per Cascade alle
+// Eintraege und die Kette beginnt beim naechsten gueltigen Wort neu.
+model WordChainGame {
+  id        String   @id @default(cuid())
+  channelId String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries   WordChainEntry[]
+}
+
+// turnIndex zaehlt fortlaufend pro Spiel hoch (1, 2, 3, ...) - macht den
+// "mind. 5 Woerter Abstand bis zur Wiederverwendung"-Check zu einer simplen
+// Ganzzahl-Differenz statt einer Zeitstempel-Zaehlung.
+model WordChainEntry {
+  id        String        @id @default(cuid())
+  gameId    String
+  game      WordChainGame @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  turnIndex Int
+  word      String
+  wordLower String
+  discordId String
+  createdAt DateTime      @default(now())
+
+  @@index([gameId, wordLower])
+  @@index([gameId, turnIndex])
+}
+
 // Ein Discord-Server, auf dem der Ausleih-Bot ein sich selbst
 // aktualisierendes Item-Panel in einem bestimmten Kanal pflegt. Der Bot muss
 // dem Server zusaetzlich manuell per Invite-Link hinzugefuegt werden - das

@@ -70,6 +70,10 @@ export const LOAN_REMINDER_STAGE = {
 } as const;
 export type LoanReminderStageValue = (typeof LOAN_REMINDER_STAGE)[keyof typeof LOAN_REMINDER_STAGE];
 
+// Wortkettenspiel: fester Kanal + Regelparameter (siehe src/lib/wordChain.ts).
+export const WORTKETTEN_CHANNEL_ID = process.env.DISCORD_WORTKETTEN_CHANNEL_ID ?? "";
+export const WORD_CHAIN_REUSE_GAP = 5; // Mind. so viele andere Woerter muessen dazwischen liegen
+
 export const LOAN_CHANNEL = {
   WEB: "WEB",
   DISCORD: "DISCORD",

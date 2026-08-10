@@ -227,6 +227,10 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
         ],
       },
       {
+        name: "wortketten-reset",
+        description: "Setzt das Wortkettenspiel in diesem Kanal zurück (nur für Aufsicht/Owner)",
+      },
+      {
         name: "setup",
         description: "Richtet die LeihCenter-Panels in diesem Kanal ein (nur Owner)",
         options: [
