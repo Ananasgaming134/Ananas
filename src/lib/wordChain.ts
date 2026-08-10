@@ -111,28 +111,34 @@ async function isKnownBaseWord(word: string): Promise<boolean> {
 // rekursive Zerlegung: an jeder moeglichen Stelle splitten, linken Teil (ggf.
 // nach Abzug eines Fugenlauts wie "s"/"es"/"n") und rechten Teil je einzeln
 // oder wieder zusammengesetzt pruefen.
+//
+// Bewusst NUR gegen das Duden-Woerterbuch geprueft (nicht gegen Item-Katalog/
+// Jugendsprache/Geografie): die Item-Liste ist gross und unkuratiert (Namen
+// aus der externen Preisquelle) - kombiniert mit freier Zerlegung an jeder
+// Stelle fanden sich sonst zufaellige Treffer, die auch Kauderwelsch als
+// "Kompositum" durchgehen liessen.
 const MIN_COMPOUND_PART_LEN = 3;
 const FUGENLAUTE = ["ens", "es", "ns", "en", "er", "s", "n", "e"];
 
-async function isCompoundPart(part: string): Promise<boolean> {
-  if (await isKnownBaseWord(part)) return true;
+function isCompoundPart(part: string): boolean {
+  if (isValidGermanWord(part)) return true;
   for (const fuge of FUGENLAUTE) {
     if (part.length <= fuge.length || !part.toLowerCase().endsWith(fuge)) continue;
     const stripped = part.slice(0, part.length - fuge.length);
-    if (stripped.length >= MIN_COMPOUND_PART_LEN && (await isKnownBaseWord(stripped))) return true;
+    if (stripped.length >= MIN_COMPOUND_PART_LEN && isValidGermanWord(stripped)) return true;
   }
   return false;
 }
 
-async function canDecomposeCompound(word: string, depth = 0): Promise<boolean> {
+function canDecomposeCompound(word: string, depth = 0): boolean {
   if (depth > 4) return false; // Sicherheitslimit gegen entartete Rekursion
   if (word.length < MIN_COMPOUND_PART_LEN * 2) return false;
 
   for (let i = MIN_COMPOUND_PART_LEN; i <= word.length - MIN_COMPOUND_PART_LEN; i++) {
     const left = word.slice(0, i);
     const right = word.slice(i);
-    if (!(await isCompoundPart(left))) continue;
-    if ((await isCompoundPart(right)) || (await canDecomposeCompound(right, depth + 1))) return true;
+    if (!isCompoundPart(left)) continue;
+    if (isCompoundPart(right) || canDecomposeCompound(right, depth + 1)) return true;
   }
   return false;
 }
