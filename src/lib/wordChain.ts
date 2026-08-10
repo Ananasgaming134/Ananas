@@ -141,13 +141,20 @@ export async function processWordChainAttempt(
     }
 
     if (latest) {
-      const requiredLetter = latest.word.slice(-1).toLowerCase();
+      // Kein deutsches Wort beginnt mit "ß" - endet die Kette darauf, gilt
+      // wie ueblich beim Wortkettenspiel "s" als naechster Anfangsbuchstabe.
+      const lastLetter = latest.word.slice(-1).toLowerCase();
+      const requiredLetter = lastLetter === "ß" ? "s" : lastLetter;
       const actualLetter = word[0].toLowerCase();
       if (actualLetter !== requiredLetter) {
+        const hint =
+          lastLetter === "ß"
+            ? ` (bei „${latest.word}“ zählt „ß“ wie „s“)`
+            : ` (letzter Buchstabe von „${latest.word}“)`;
         return {
           kind: "rejected",
           word,
-          reason: `Dein Wort muss mit „${requiredLetter.toUpperCase()}“ beginnen (letzter Buchstabe von „${latest.word}“).`,
+          reason: `Dein Wort muss mit „${requiredLetter.toUpperCase()}“ beginnen${hint}.`,
         } as const;
       }
     }
