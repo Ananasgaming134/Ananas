@@ -3,6 +3,7 @@ import nspellFactory from "nspell";
 import { prisma } from "@/lib/prisma";
 import { fetchPriceSourceItems } from "@/lib/priceSource";
 import { JUGENDSPRACHE_WOERTER } from "@/lib/wordChainSlang";
+import { GEOGRAFIE_WOERTER } from "@/lib/wordChainGeo";
 import { WORD_CHAIN_REUSE_GAP } from "@/lib/constants";
 
 // Einmalig beim ersten Import geladen (nspell + Duden-Woerterbuch), danach
@@ -97,6 +98,7 @@ async function getKnownItemWords(): Promise<Set<string>> {
 async function isKnownBaseWord(word: string): Promise<boolean> {
   if (isValidGermanWord(word)) return true;
   if (JUGENDSPRACHE_WOERTER.has(word.toLowerCase())) return true;
+  if (GEOGRAFIE_WOERTER.has(word.toLowerCase())) return true;
   const itemWords = await getKnownItemWords();
   if (itemWords.has(word.toLowerCase())) return true;
   return false;
@@ -220,7 +222,7 @@ export async function processWordChainAttempt(
       return {
         kind: "rejected",
         word,
-        reason: `„${word}“ ist kein bekanntes deutsches Wort (Duden), keine bekannte Jugendsprache und kein bekannter Minecraft-Item-Name – oder es ist falsch geschrieben.`,
+        reason: `„${word}“ ist kein bekanntes deutsches Wort (Duden), keine bekannte Jugendsprache, kein bekannter Städte-/Fluss-/Ländername und kein bekannter Minecraft-Item-Name – oder es ist falsch geschrieben.`,
       } as const;
     }
 
