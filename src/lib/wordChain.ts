@@ -90,12 +90,54 @@ async function getKnownItemWords(): Promise<Set<string>> {
   return words;
 }
 
-async function isKnownWord(word: string): Promise<boolean> {
+/**
+ * Direkte Pruefung ohne Komposita-Zerlegung: Duden-Woerterbuch, Jugendsprache,
+ * bekannte Minecraft-Item-Woerter.
+ */
+async function isKnownBaseWord(word: string): Promise<boolean> {
   if (isValidGermanWord(word)) return true;
   if (JUGENDSPRACHE_WOERTER.has(word.toLowerCase())) return true;
   const itemWords = await getKnownItemWords();
   if (itemWords.has(word.toLowerCase())) return true;
   return false;
+}
+
+// Deutsch ist extrem kompositionsfreudig (Eingang+Tür = "Eingangstür") - im
+// Hunspell-Woerterbuch stehen nur die Einzelteile, keine der unendlich vielen
+// moeglichen Zusammensetzungen. nspell unterstuetzt die COMPOUNDBEGIN/MIDDLE/
+// END-Regeln des deutschen Woerterbuchs nicht, deshalb hier eine eigene,
+// rekursive Zerlegung: an jeder moeglichen Stelle splitten, linken Teil (ggf.
+// nach Abzug eines Fugenlauts wie "s"/"es"/"n") und rechten Teil je einzeln
+// oder wieder zusammengesetzt pruefen.
+const MIN_COMPOUND_PART_LEN = 3;
+const FUGENLAUTE = ["ens", "es", "ns", "en", "er", "s", "n", "e"];
+
+async function isCompoundPart(part: string): Promise<boolean> {
+  if (await isKnownBaseWord(part)) return true;
+  for (const fuge of FUGENLAUTE) {
+    if (part.length <= fuge.length || !part.toLowerCase().endsWith(fuge)) continue;
+    const stripped = part.slice(0, part.length - fuge.length);
+    if (stripped.length >= MIN_COMPOUND_PART_LEN && (await isKnownBaseWord(stripped))) return true;
+  }
+  return false;
+}
+
+async function canDecomposeCompound(word: string, depth = 0): Promise<boolean> {
+  if (depth > 4) return false; // Sicherheitslimit gegen entartete Rekursion
+  if (word.length < MIN_COMPOUND_PART_LEN * 2) return false;
+
+  for (let i = MIN_COMPOUND_PART_LEN; i <= word.length - MIN_COMPOUND_PART_LEN; i++) {
+    const left = word.slice(0, i);
+    const right = word.slice(i);
+    if (!(await isCompoundPart(left))) continue;
+    if ((await isCompoundPart(right)) || (await canDecomposeCompound(right, depth + 1))) return true;
+  }
+  return false;
+}
+
+async function isKnownWord(word: string): Promise<boolean> {
+  if (await isKnownBaseWord(word)) return true;
+  return canDecomposeCompound(word);
 }
 
 export type WordChainResult =
