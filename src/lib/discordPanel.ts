@@ -1,7 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { DISCORD_BOT_TOKEN } from "@/lib/discord";
 import { LOAN_STATUS, SITE_NAME } from "@/lib/constants";
-import { CATEGORY_ITEM_SELECT_ID, NO_CATEGORY_VALUE, PANEL_CATEGORY_SELECT_ID, PANEL_SELECT_ID } from "@/lib/discordInteractions";
+import {
+  CATEGORY_ITEM_SELECT_ID,
+  CATEGORY_PAGE_PREFIX,
+  NO_CATEGORY_VALUE,
+  PANEL_CATEGORY_SELECT_ID,
+  PANEL_SELECT_ID,
+} from "@/lib/discordInteractions";
 
 const MAX_SELECT_OPTIONS = 25; // Discord-Select-Menues erlauben maximal 25 Optionen
 const MAX_DESCRIPTION_LINES = 40; // Embed-Beschreibung soll bei sehr vielen Items nicht ins Uferlose wachsen
@@ -131,19 +137,29 @@ async function buildPanelPayload() {
 /**
  * Baut die (ephemere, nur fuer den klickenden Nutzer sichtbare) Item-Auswahl
  * fuer eine per Kategorie-Select gewaehlte Kategorie. Wird als eigene
- * Nachricht als Antwort auf die Kategorie-Auswahl gepostet.
+ * Nachricht als Antwort auf die Kategorie-Auswahl gepostet (oder beim
+ * Seitenwechsel per UPDATE_MESSAGE ersetzt). `page` ist 0-basiert; bei mehr
+ * als MAX_SELECT_OPTIONS Items in der Kategorie kommt eine zweite Zeile mit
+ * Zurueck/Weiter-Buttons dazu, damit wirklich alle Items erreichbar sind
+ * (ein einzelnes Discord-Select erlaubt maximal 25 Optionen).
  */
-export async function buildCategoryItemSelectPayload(categoryValue: string) {
+export async function buildCategoryItemSelectPayload(categoryValue: string, page = 0) {
   const where = categoryValue === NO_CATEGORY_VALUE ? { categoryId: null } : { categoryId: categoryValue };
 
-  const [items, totalInCategory] = await Promise.all([
-    prisma.item.findMany({ where, orderBy: { name: "asc" }, take: MAX_SELECT_OPTIONS }),
-    prisma.item.count({ where }),
-  ]);
-
-  if (items.length === 0) {
+  const totalInCategory = await prisma.item.count({ where });
+  if (totalInCategory === 0) {
     return { content: "In dieser Kategorie sind aktuell keine Items hinterlegt.", components: [] };
   }
+
+  const pageCount = Math.max(1, Math.ceil(totalInCategory / MAX_SELECT_OPTIONS));
+  const safePage = Math.min(Math.max(0, page), pageCount - 1);
+
+  const items = await prisma.item.findMany({
+    where,
+    orderBy: { name: "asc" },
+    skip: safePage * MAX_SELECT_OPTIONS,
+    take: MAX_SELECT_OPTIONS,
+  });
 
   const activeLoans = await prisma.loan.groupBy({
     by: ["itemId"],
@@ -151,31 +167,61 @@ export async function buildCategoryItemSelectPayload(categoryValue: string) {
     _count: { itemId: true },
   });
   const activeByItem = new Map(activeLoans.map((l) => [l.itemId, l._count.itemId]));
-  const truncated = totalInCategory > MAX_SELECT_OPTIONS;
+
+  const components: unknown[] = [
+    {
+      type: 1,
+      components: [
+        {
+          type: 3,
+          custom_id: CATEGORY_ITEM_SELECT_ID,
+          placeholder: "Item auswählen...",
+          options: items.map((item) => {
+            const borrowed = activeByItem.get(item.id) ?? 0;
+            const available = item.quantityTotal - borrowed;
+            return {
+              label: item.name.slice(0, 100),
+              value: item.id,
+              description: `${available}/${item.quantityTotal} frei`,
+            };
+          }),
+        },
+      ],
+    },
+  ];
+
+  if (pageCount > 1) {
+    components.push({
+      type: 1,
+      components: [
+        {
+          type: 2,
+          style: 2,
+          label: "◀ Zurück",
+          custom_id: `${CATEGORY_PAGE_PREFIX}${categoryValue}:${safePage - 1}`,
+          disabled: safePage === 0,
+        },
+        {
+          type: 2,
+          style: 2,
+          label: `Seite ${safePage + 1}/${pageCount}`,
+          custom_id: `${CATEGORY_PAGE_PREFIX}${categoryValue}:${safePage}`,
+          disabled: true,
+        },
+        {
+          type: 2,
+          style: 2,
+          label: "Weiter ▶",
+          custom_id: `${CATEGORY_PAGE_PREFIX}${categoryValue}:${safePage + 1}`,
+          disabled: safePage >= pageCount - 1,
+        },
+      ],
+    });
+  }
 
   return {
-    content: `Item auswählen${truncated ? ` (zeigt die ersten ${MAX_SELECT_OPTIONS} von ${totalInCategory} — weitere über die Website)` : ""}:`,
-    components: [
-      {
-        type: 1,
-        components: [
-          {
-            type: 3,
-            custom_id: CATEGORY_ITEM_SELECT_ID,
-            placeholder: "Item auswählen...",
-            options: items.map((item) => {
-              const borrowed = activeByItem.get(item.id) ?? 0;
-              const available = item.quantityTotal - borrowed;
-              return {
-                label: item.name.slice(0, 100),
-                value: item.id,
-                description: `${available}/${item.quantityTotal} frei`,
-              };
-            }),
-          },
-        ],
-      },
-    ],
+    content: `Item auswählen (${totalInCategory} insgesamt${pageCount > 1 ? `, Seite ${safePage + 1}/${pageCount}` : ""}):`,
+    components,
   };
 }
 

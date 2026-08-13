@@ -15,6 +15,8 @@ export const PANEL_CATEGORY_SELECT_ID = "leihcenter_select_category";
 export const CATEGORY_ITEM_SELECT_ID = "leihcenter_select_item_in_category";
 export const BORROW_PREFIX = "leihcenter_borrow:";
 export const RETURN_PREFIX = "leihcenter_return:";
+/** custom_id-Format: `${CATEGORY_PAGE_PREFIX}${categoryValue}:${page}` - Seitenwechsel innerhalb einer Kategorie. */
+export const CATEGORY_PAGE_PREFIX = "leihcenter_category_page:";
 /** Wert im Kategorie-Select fuer Items ohne zugeordnete Kategorie. */
 export const NO_CATEGORY_VALUE = "__none";
 

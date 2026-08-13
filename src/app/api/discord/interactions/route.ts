@@ -7,6 +7,7 @@ import { RENEW_PREFIX, setSubscriptionPlanCore } from "@/lib/subscriptions";
 import {
   BORROW_PREFIX,
   CATEGORY_ITEM_SELECT_ID,
+  CATEGORY_PAGE_PREFIX,
   PANEL_CATEGORY_SELECT_ID,
   PANEL_SELECT_ID,
   RETURN_PREFIX,
@@ -233,6 +234,18 @@ async function handleComponent(interaction: DiscordInteractionPayload) {
     const itemId: string | undefined = interaction.data?.values?.[0];
     if (!itemId) return ephemeral("Kein Item ausgewählt.");
     return respondWithItemActions(itemId, interaction.guild_id, memberRoles, discordUser, true);
+  }
+
+  if (customId.startsWith(CATEGORY_PAGE_PREFIX)) {
+    const rest = customId.slice(CATEGORY_PAGE_PREFIX.length);
+    const separatorIndex = rest.lastIndexOf(":");
+    const categoryValue = rest.slice(0, separatorIndex);
+    const page = parseInt(rest.slice(separatorIndex + 1), 10) || 0;
+    const payload = await buildCategoryItemSelectPayload(categoryValue, page);
+    return Response.json({
+      type: InteractionResponseType.UPDATE_MESSAGE,
+      data: { ...payload, flags: EPHEMERAL },
+    });
   }
 
   if (customId.startsWith(BORROW_PREFIX)) {
