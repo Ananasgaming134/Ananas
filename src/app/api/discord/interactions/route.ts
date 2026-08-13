@@ -89,6 +89,12 @@ async function handleCommand(interaction: DiscordInteractionPayload) {
     return ephemeral("✅ Wortkettenspiel wurde zurückgesetzt. Das nächste gültige Wort startet die Kette neu.");
   }
 
+  if (commandName === "meine-ausleihen") {
+    const discordUser = interaction.member?.user ?? interaction.user;
+    if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
+    return handleMeineAusleihenCommand(discordUser);
+  }
+
   if (commandName !== "akte") {
     return ephemeral("Unbekannter Befehl.");
   }
@@ -388,6 +394,54 @@ async function handleBorrow(
   return ephemeral(
     result.ok ? "✅ Item ausgeliehen. Viel Spaß!" : `❌ ${result.error}`
   );
+}
+
+/**
+ * "/meine-ausleihen" - zeigt alle aktuell ausgeliehenen Items der
+ * aufrufenden Person direkt mit Rueckgabe-Button, ohne dass man erst wieder
+ * durch Kategorie/Item-Auswahl navigieren muss, um an den Button zu kommen.
+ */
+async function handleMeineAusleihenCommand(discordUser: DiscordInteractionUser) {
+  const member = await prisma.member.findUnique({ where: { discordId: discordUser.id } });
+  if (!member) return ephemeral("Für deinen Account existiert noch keine Akte. Leih zuerst etwas aus.");
+
+  const activeLoans = await prisma.loan.findMany({
+    where: { memberId: member.id, status: LOAN_STATUS.ACTIVE },
+    include: { item: true },
+    orderBy: { borrowedAt: "asc" },
+  });
+
+  if (activeLoans.length === 0) {
+    return ephemeral("Du hast aktuell nichts ausgeliehen.");
+  }
+
+  const lines = activeLoans.map((loan) => {
+    const unixSeconds = Math.floor(loan.borrowedAt.getTime() / 1000);
+    return `📦 **${loan.item.name}** — ausgeliehen seit <t:${unixSeconds}:R>`;
+  });
+
+  // Discord: max. 5 Buttons pro Zeile, max. 5 Zeilen pro Nachricht.
+  const buttonRows = [];
+  for (let i = 0; i < activeLoans.length && buttonRows.length < 5; i += 5) {
+    buttonRows.push({
+      type: 1,
+      components: activeLoans.slice(i, i + 5).map((loan) => ({
+        type: 2,
+        style: 3,
+        label: loan.item.name.slice(0, 80),
+        custom_id: `${RETURN_PREFIX}${loan.id}`,
+      })),
+    });
+  }
+
+  return Response.json({
+    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+    data: {
+      content: `**Deine aktuellen Ausleihen:**\n${lines.join("\n")}\n\nZum Zurückgeben einfach unten klicken:`,
+      components: buttonRows,
+      flags: EPHEMERAL,
+    },
+  });
 }
 
 async function handleReturn(loanId: string, discordUser: DiscordInteractionUser) {

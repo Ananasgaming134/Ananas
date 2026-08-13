@@ -231,6 +231,10 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
         description: "Setzt das Wortkettenspiel in diesem Kanal zurück (nur für Aufsicht/Owner)",
       },
       {
+        name: "meine-ausleihen",
+        description: "Zeigt deine aktuell ausgeliehenen Items mit Rückgabe-Button (nur für dich sichtbar)",
+      },
+      {
         name: "setup",
         description: "Richtet die LeihCenter-Panels in diesem Kanal ein (nur Owner)",
         options: [
