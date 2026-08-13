@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import DashboardNav from "@/components/DashboardNav";
+import DashboardTopbar from "@/components/DashboardTopbar";
 import SignOutButton from "@/components/SignOutButton";
 import RoleBadge from "@/components/RoleBadge";
 import AnimatedBackground from "@/components/AnimatedBackground";
@@ -19,10 +20,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <aside className="hidden w-64 shrink-0 lg:block">
           <div className="card-glass sticky top-6 flex h-[calc(100vh-3rem)] flex-col p-4">
             <Link href="/" className="mb-6 flex items-center gap-2 px-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-xs font-bold text-accent">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-xs font-bold text-accent shadow-[0_0_20px_-4px_var(--accent)]">
                 OL
               </div>
-              <span className="text-sm font-semibold">{SITE_NAME}</span>
+              <span className="text-sm font-semibold tracking-tight">{SITE_NAME}</span>
             </Link>
 
             <DashboardNav role={member.role} />
@@ -64,6 +65,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <DashboardNav role={member.role} />
             </div>
           </div>
+          <DashboardTopbar />
           {children}
         </div>
       </div>
