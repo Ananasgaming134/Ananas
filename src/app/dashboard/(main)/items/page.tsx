@@ -3,7 +3,8 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { borrowItem, returnLoan } from "@/app/actions/loans";
 import LoanCountdown from "@/components/LoanCountdown";
-import { hasAtLeastRole, LOAN_STATUS, ROLES } from "@/lib/constants";
+import ReborrowCooldown from "@/components/ReborrowCooldown";
+import { hasAtLeastRole, LOAN_STATUS, REBORROW_COOLDOWN_MS, ROLES } from "@/lib/constants";
 
 export default async function ItemsPage({
   searchParams,
@@ -13,8 +14,9 @@ export default async function ItemsPage({
   const member = await requireMember();
   const isOwner = hasAtLeastRole(member.role, ROLES.OWNER);
   const { q, kategorie } = await searchParams;
+  const now = new Date();
 
-  const [items, activeLoans, myActiveLoans, categories, totalCount] = await Promise.all([
+  const [items, activeLoans, myActiveLoans, myRecentReturns, categories, totalCount] = await Promise.all([
     prisma.item.findMany({
       where: {
         ...(q
@@ -38,14 +40,31 @@ export default async function ItemsPage({
     prisma.loan.findMany({
       where: { memberId: member.id, status: LOAN_STATUS.ACTIVE },
     }),
+    prisma.loan.findMany({
+      where: {
+        memberId: member.id,
+        status: LOAN_STATUS.RETURNED,
+        returnedAt: { gte: new Date(now.getTime() - REBORROW_COOLDOWN_MS) },
+      },
+      orderBy: { returnedAt: "desc" },
+      select: { itemId: true, returnedAt: true },
+    }),
     prisma.category.findMany({ orderBy: { name: "asc" } }),
     prisma.item.count(),
   ]);
 
   const activeCountByItem = new Map(activeLoans.map((l) => [l.itemId, l._count.itemId]));
   const myLoanByItem = new Map(myActiveLoans.map((l) => [l.itemId, l]));
+  // Cooldown-Ende pro Item nach eigener Rueckgabe - nur der juengste Return
+  // pro Item zaehlt (myRecentReturns ist bereits nach returnedAt absteigend
+  // sortiert, deshalb wird bei einem Duplikat der erste/neueste behalten).
+  const cooldownEndByItem = new Map<string, Date>();
+  for (const loan of myRecentReturns) {
+    if (!loan.returnedAt || cooldownEndByItem.has(loan.itemId)) continue;
+    cooldownEndByItem.set(loan.itemId, new Date(loan.returnedAt.getTime() + REBORROW_COOLDOWN_MS));
+  }
   const isFiltered = Boolean(q || kategorie);
-  const isSuspended = Boolean(member.borrowSuspendedUntil && member.borrowSuspendedUntil > new Date());
+  const isSuspended = Boolean(member.borrowSuspendedUntil && member.borrowSuspendedUntil > now);
 
   // Items werden immer nach Kategorie gruppiert dargestellt - auch bei
   // "Alle Kategorien" - statt alphabetisch quer durcheinander, damit man sich
@@ -155,6 +174,8 @@ export default async function ItemsPage({
                   const borrowedCount = activeCountByItem.get(item.id) ?? 0;
                   const available = item.quantityTotal - borrowedCount;
                   const myLoan = myLoanByItem.get(item.id);
+                  const cooldownEnd = cooldownEndByItem.get(item.id);
+                  const inCooldown = Boolean(cooldownEnd && cooldownEnd > now);
 
                   return (
                     <div key={item.id} className="card card-hover flex flex-col overflow-hidden">
@@ -208,6 +229,19 @@ export default async function ItemsPage({
                             >
                               Gesperrt
                             </button>
+                          ) : inCooldown && cooldownEnd ? (
+                            <div className="space-y-2">
+                              <p className="text-center text-xs text-muted">
+                                <ReborrowCooldown until={cooldownEnd} />
+                              </p>
+                              <button
+                                type="button"
+                                disabled
+                                className="w-full cursor-not-allowed rounded-lg border border-border px-3 py-2 text-sm text-muted"
+                              >
+                                Ausleihen
+                              </button>
+                            </div>
                           ) : available > 0 ? (
                             <form action={borrowItem.bind(null, item.id)}>
                               <button

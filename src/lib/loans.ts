@@ -91,19 +91,27 @@ export async function borrowItemCore(
   return { ok: true, loanId: loan.id };
 }
 
+export type ReturnResult =
+  | { ok: true; loanId: string; itemName: string; cooldownEndsAt: Date }
+  | { ok: false; error: string };
+
 /**
  * Kernlogik zur Rueckgabe. `memberId` muss zum Loan gehoeren (kein
- * fremdes Zurueckgeben ueber die API).
+ * fremdes Zurueckgeben ueber die API). Liefert bei Erfolg zusaetzlich mit,
+ * bis wann die 30-Minuten-Abklingzeit fuer dasselbe Item laeuft, damit
+ * Aufrufer (Website, Discord) das direkt anzeigen koennen, ohne separat
+ * nachzufragen.
  */
-export async function returnLoanCore(loanId: string, memberId: string): Promise<LoanActionResult> {
+export async function returnLoanCore(loanId: string, memberId: string): Promise<ReturnResult> {
   const loan = await prisma.loan.findUnique({ where: { id: loanId }, include: { item: true } });
   if (!loan || loan.memberId !== memberId || loan.status !== LOAN_STATUS.ACTIVE) {
     return { ok: false, error: "Ausleihe nicht gefunden oder bereits zurückgegeben." };
   }
 
+  const returnedAt = new Date();
   await prisma.loan.update({
     where: { id: loanId },
-    data: { status: LOAN_STATUS.RETURNED, returnedAt: new Date() },
+    data: { status: LOAN_STATUS.RETURNED, returnedAt },
   });
   await logAction({
     actorId: memberId,
@@ -112,7 +120,12 @@ export async function returnLoanCore(loanId: string, memberId: string): Promise<
     details: `"${loan.item.name}" zurückgegeben (Loan ${loanId})`,
   });
 
-  return { ok: true, loanId };
+  return {
+    ok: true,
+    loanId,
+    itemName: loan.item.name,
+    cooldownEndsAt: new Date(returnedAt.getTime() + REBORROW_COOLDOWN_MS),
+  };
 }
 
 /** Findet die aktive Ausleihe eines Mitglieds fuer ein bestimmtes Item, falls vorhanden. */

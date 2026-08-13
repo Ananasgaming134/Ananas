@@ -384,5 +384,10 @@ async function handleReturn(loanId: string, discordUser: DiscordInteractionUser)
   const result = await returnLoanCore(loanId, member.id);
   await refreshPanelsQuietly();
 
-  return ephemeral(result.ok ? "✅ Item zurückgegeben. Danke!" : `❌ ${result.error}`);
+  if (!result.ok) return ephemeral(`❌ ${result.error}`);
+
+  const unixSeconds = Math.floor(result.cooldownEndsAt.getTime() / 1000);
+  return ephemeral(
+    `✅ **${result.itemName}** zurückgegeben. Danke!\nDu kannst es ab <t:${unixSeconds}:R> wieder ausleihen.`
+  );
 }
