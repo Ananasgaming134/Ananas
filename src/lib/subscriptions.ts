@@ -6,15 +6,55 @@ import { formatCoins, getSubscriptionPlan, SITE_NAME, SUBSCRIPTION_PLANS, type S
 
 export const RENEW_PREFIX = "leihcenter_renew:";
 
+export type BalanceActionResult = { ok: true; newBalance: number } | { ok: false; error: string };
+
+/**
+ * Manuelle Guthaben-Buchung durch die Führungsebene (nur Owner, siehe
+ * Berechtigungspruefung im Aufrufer) - unabhaengig von der automatischen
+ * Zahlungserkennung (creditPaymentToBalance in src/lib/payments.ts). Deckt
+ * Faelle ab, in denen eine Zahlung nicht automatisch erkannt wurde, oder
+ * Korrekturen/Boni. amount kann negativ sein, um eine fehlerhafte Buchung
+ * zu korrigieren - das grundsaetzliche "kein Rueckueberweisen"-Prinzip gilt
+ * trotzdem, das hier ist eine interne Korrektur, keine Auszahlung an den Kunden.
+ */
+export async function adjustBalanceCore(
+  memberId: string,
+  amount: number,
+  reason: string,
+  actorId: string
+): Promise<BalanceActionResult> {
+  if (!Number.isFinite(amount) || amount === 0) return { ok: false, error: "Ungültiger Betrag." };
+
+  const target = await prisma.member.findUnique({ where: { id: memberId } });
+  if (!target) return { ok: false, error: "Mitglied nicht gefunden." };
+
+  const updated = await prisma.member.update({
+    where: { id: memberId },
+    data: { balance: { increment: amount } },
+  });
+
+  await logAction({
+    actorId,
+    targetId: memberId,
+    action: "BALANCE_ADJUSTED",
+    details: `Guthaben manuell ${amount > 0 ? "aufgeladen" : "korrigiert"} um ${formatCoins(amount)} (${reason}) - neuer Stand: ${formatCoins(updated.balance)}.`,
+  });
+
+  return { ok: true, newBalance: updated.balance };
+}
+
 type SetSubscriptionResult =
   | { ok: true; plan: SubscriptionPlan; newExpiry: Date }
   | { ok: false; error: string };
 
 /**
- * Weist einem Kunden ein Abo zu bzw. verlaengert es (haengt bei laufender
- * Laufzeit an das bestehende feePaidUntil an, statt ab heute zu zaehlen).
- * Wird sowohl von der Web-Aktion (setSubscriptionPlan) als auch vom
- * Verlaengern-Button im Discord-Abo-Kanal aufgerufen.
+ * Bucht den Preis eines Pakets vom Guthaben (member.balance) ab und
+ * verlaengert das Abo entsprechend (haengt bei laufender Laufzeit an das
+ * bestehende feePaidUntil an, statt ab heute zu zaehlen). Schlaegt fehl,
+ * wenn nicht genug Guthaben vorhanden ist - Guthaben kommt ausschliesslich
+ * ueber creditPaymentToBalance (src/lib/payments.ts) rein, es gibt keine
+ * automatische Zuordnung. Wird sowohl von der Web-Aktion (setSubscriptionPlan)
+ * als auch vom Verlaengern-Button im Discord-Abo-Kanal aufgerufen.
  */
 export async function setSubscriptionPlanCore(
   memberId: string,
@@ -30,6 +70,13 @@ export async function setSubscriptionPlanCore(
   const plan = getSubscriptionPlan(planId);
   if (!plan) return { ok: false, error: "Unbekannter Abo-Plan." };
 
+  if (target.balance < plan.price) {
+    return {
+      ok: false,
+      error: `Nicht genug Guthaben (aktuell ${formatCoins(target.balance)}, benötigt ${formatCoins(plan.price)}).`,
+    };
+  }
+
   const now = new Date();
   const base = target.feePaidUntil && target.feePaidUntil > now ? target.feePaidUntil : now;
   const newExpiry = new Date(base);
@@ -42,15 +89,15 @@ export async function setSubscriptionPlanCore(
       monthlyFee: plan.price,
       feePaidUntil: newExpiry,
       subscriptionReminderSentAt: null,
-      openBalance: 0,
+      balance: { decrement: plan.price },
     },
   });
 
   await logAction({
     actorId,
     targetId: memberId,
-    action: "SUBSCRIPTION_SET",
-    details: `Abo "${plan.label}" (${formatCoins(plan.price)}) zugewiesen, gültig bis ${newExpiry.toLocaleDateString("de-DE")}.`,
+    action: "SUBSCRIPTION_CHARGED",
+    details: `Abo "${plan.label}" (${formatCoins(plan.price)}) vom Guthaben abgebucht, gültig bis ${newExpiry.toLocaleDateString("de-DE")}.`,
   });
 
   return { ok: true, plan, newExpiry };

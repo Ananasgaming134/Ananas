@@ -7,7 +7,6 @@ import {
   lockMember,
   reinstateAccess,
   revokeAccess,
-  setSubscriptionPlan,
   unlockMember,
   updateMinecraftName,
 } from "@/app/actions/members";
@@ -16,6 +15,8 @@ import StatusBadge from "@/components/StatusBadge";
 import StatCard from "@/components/StatCard";
 import ElapsedTime from "@/components/ElapsedTime";
 import LoanCountdown from "@/components/LoanCountdown";
+import AboAssignForm from "@/components/AboAssignForm";
+import BalanceAdjustForm from "@/components/BalanceAdjustForm";
 import {
   canManage,
   formatCoins,
@@ -68,7 +69,6 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
   const boundRevoke = revokeAccess.bind(null, target.id);
   const boundBan = banMember.bind(null, target.id);
   const boundReinstate = reinstateAccess.bind(null, target.id);
-  const boundSetSubscription = setSubscriptionPlan.bind(null, target.id);
   const boundUpdateMinecraftName = updateMinecraftName.bind(null, target.id);
   const boundLock = lockMember.bind(null, target.id);
   const boundUnlock = unlockMember.bind(null, target.id);
@@ -317,47 +317,34 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
                 />
               </div>
             )}
-            {target.openBalance > 0 && (
-              <p className="mt-2 text-xs text-yellow-500">
-                Noch {formatCoins(target.openBalance)} offen für die aktuelle Verlängerung.
-              </p>
+            <p className="mt-2 text-xs text-muted">
+              Guthaben: <span className="text-foreground">{formatCoins(target.balance)}</span>
+            </p>
+            {showOwnerActions && (
+              <div className="mt-2">
+                <BalanceAdjustForm memberId={target.id} />
+              </div>
             )}
           </div>
 
           {isAufsichtPlus && !isSelf && (
-            <form action={boundSetSubscription} className="flex items-center gap-2">
-              <select
-                name="planId"
-                defaultValue={currentPlan?.id ?? SUBSCRIPTION_PLANS[0].id}
-                className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none ring-accent/40 focus:ring-2"
-              >
-                {SUBSCRIPTION_PLANS.map((plan) => (
-                  <option key={plan.id} value={plan.id}>
-                    {plan.label} &ndash; {formatCoins(plan.price)}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110"
-              >
-                Abo zuweisen/verlängern
-              </button>
-            </form>
+            <AboAssignForm memberId={target.id} plans={SUBSCRIPTION_PLANS} currentPlanId={currentPlan?.id} />
           )}
         </div>
 
         {isSelf && (
           <div className="mt-5 rounded-lg border border-border bg-surface/60 p-4">
-            <p className="text-sm font-medium">Abo verlängern oder neu abschließen</p>
+            <p className="text-sm font-medium">Guthaben aufladen</p>
             <p className="mt-1 text-xs text-muted">
-              Überweise den Betrag für die gewünschte Laufzeit an die Business-Card{" "}
-              <span className="font-mono text-foreground">BC-584289</span> und gib als
-              Verwendungszweck genau{" "}
+              Überweise einen beliebigen Betrag an die Business-Card{" "}
+              <span className="font-mono text-foreground">BC-584289</span> mit dem Verwendungszweck{" "}
               <span className="font-mono text-foreground">
                 Verleih {target.customerNumber ?? "-"}
               </span>{" "}
-              an (deine Kundennummer), damit die Zahlung dir automatisch zugeordnet werden kann.
+              (deine Kundennummer). Der Betrag wird als Guthaben (aktuell{" "}
+              <span className="text-foreground">{formatCoins(target.balance)}</span>) auf deinem
+              Konto gutgeschrieben und bleibt dort dauerhaft hinterlegt &ndash; die Aufsicht bucht
+              davon dann dein gewünschtes Paket ab. Eine Rücküberweisung ist nicht möglich.
             </p>
             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
               {SUBSCRIPTION_PLANS.map((plan) => {

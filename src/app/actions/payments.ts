@@ -5,8 +5,7 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { checkForNewPayments } from "@/lib/payments";
-import { setSubscriptionPlanCore } from "@/lib/subscriptions";
-import { ROLES, getSubscriptionPlan } from "@/lib/constants";
+import { ROLES } from "@/lib/constants";
 
 function refreshPaymentPages() {
   revalidatePath("/dashboard/verwaltung/zahlungen");
@@ -28,47 +27,31 @@ export async function checkPayments() {
 }
 
 /**
- * Ordnet eine erkannte Zahlung einem Abo-Plan zu. 1 ₵ = 1 $ (direkt
- * vergleichbar) - reicht der Betrag nicht fuer den vollen Plan-Preis, wird
- * er als Teilzahlung auf member.openBalance angerechnet und das Abo NICHT
- * verlaengert; erst wenn der offene Betrag auf 0 sinkt, wird tatsaechlich
- * verlaengert (setSubscriptionPlanCore). Startet eine neue "Rechnung" (voller
- * Plan-Preis als offener Betrag), falls noch keine fuer dieses Paket laeuft.
+ * Schreibt eine erkannte Zahlung als Guthaben auf dem Konto des zugeordneten
+ * Mitglieds gut - 1 ₵ = 1 $ (direkt vergleichbar). Ordnet NICHT direkt einem
+ * Abo-Paket zu; das Abbuchen eines Pakets vom Guthaben passiert separat
+ * (setSubscriptionPlanCore, z.B. ueber "Abo zuweisen/verlängern" auf der
+ * Akte-Seite). Guthaben wird nie zurücküberwiesen, bleibt also dauerhaft
+ * hinterlegt bis es abgebucht wird oder das Mitglied gebannt wird.
  */
-export async function applyPaymentToPlan(paymentId: string, formData: FormData) {
+export async function creditPaymentToBalance(paymentId: string) {
   const actor = await requireMember(ROLES.AUFSICHT);
   const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
   if (!payment || payment.status !== "PENDING" || !payment.memberId) return;
 
-  const planId = String(formData.get("planId") ?? "");
-  const plan = getSubscriptionPlan(planId);
-  if (!plan) return;
-
-  const member = await prisma.member.findUnique({ where: { id: payment.memberId } });
-  if (!member) return;
-
-  const openBalance = member.subscriptionPlan === planId && member.openBalance > 0 ? member.openBalance : plan.price;
-  const remaining = openBalance - payment.amount;
-
-  let details: string;
-  if (remaining <= 0) {
-    const result = await setSubscriptionPlanCore(member.id, planId, actor.id);
-    if (!result.ok) return;
-    details = `Zahlung von ${payment.amount} ₵ (@${payment.discordUsername}) vollständig auf "${result.plan.label}" angerechnet - Abo verlängert.`;
-  } else {
-    await prisma.member.update({
-      where: { id: member.id },
-      data: { subscriptionPlan: planId, openBalance: remaining },
-    });
-    details = `Zahlung von ${payment.amount} ₵ (@${payment.discordUsername}) auf "${plan.label}" angerechnet - noch $${remaining.toLocaleString("en-US")} offen.`;
-  }
-
-  await prisma.payment.update({
-    where: { id: paymentId },
-    data: { status: "APPLIED", appliedPlanId: planId },
+  await prisma.member.update({
+    where: { id: payment.memberId },
+    data: { balance: { increment: payment.amount } },
   });
 
-  await logAction({ actorId: actor.id, targetId: payment.memberId, action: "PAYMENT_APPLIED", details });
+  await prisma.payment.update({ where: { id: paymentId }, data: { status: "APPLIED" } });
+
+  await logAction({
+    actorId: actor.id,
+    targetId: payment.memberId,
+    action: "PAYMENT_CREDITED",
+    details: `Zahlung von ${payment.amount} ₵ (@${payment.discordUsername}) als Guthaben gutgeschrieben.`,
+  });
 
   refreshPaymentPages();
 }

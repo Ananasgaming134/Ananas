@@ -84,18 +84,20 @@ export default async function AboPage() {
       <div className="fade-up card space-y-3 p-5">
         <h2 className="text-sm font-semibold">So funktioniert die Bezahlung</h2>
         <p className="text-sm text-muted">
-          Überweise den Betrag für die gewünschte Laufzeit an die Business-Card{" "}
+          Überweise einen beliebigen Betrag an die Business-Card{" "}
           <span className="font-mono text-foreground">BC-584289</span> mit dem Verwendungszweck{" "}
           <span className="font-mono text-foreground">Verleih {member.customerNumber ?? "-"}</span> (deine
-          Kundennummer) — die Zahlung wird dadurch automatisch erkannt und deinem Konto zugeordnet.
+          Kundennummer). Der Betrag wird als <span className="text-foreground">Guthaben</span> auf
+          deinem Konto gutgeschrieben und bleibt dort dauerhaft hinterlegt — die Aufsicht bucht
+          davon dein gewünschtes Paket ab, sobald genug Guthaben da ist. Eine Rücküberweisung ist
+          nicht möglich; Guthaben verfällt nur bei einem Ausschluss wegen Regelverstoß.
         </p>
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-4">
           <p className="text-sm font-medium text-accent">💡 Tipp: Dauerauftrag einrichten</p>
           <p className="mt-1.5 text-xs text-muted">
-            Richtest du dir einen Dauerauftrag mit genau diesem Verwendungszweck ein, wird jede
-            Zahlung automatisch erkannt und deinem Konto zugeordnet — dein Abo läuft dann durch,
-            ohne dass du selbst jedes Mal daran denken musst. Bevorzugst du es lieber persönlich zu
-            regeln, eröffne stattdessen ein{" "}
+            Richtest du dir einen Dauerauftrag mit genau diesem Verwendungszweck ein, wächst dein
+            Guthaben automatisch weiter, ohne dass du selbst jedes Mal daran denken musst.
+            Bevorzugst du es lieber persönlich zu regeln, eröffne stattdessen ein{" "}
             <Link href="/dashboard/tickets" className="text-accent hover:underline">
               Support-Ticket
             </Link>{" "}
@@ -103,7 +105,7 @@ export default async function AboPage() {
           </p>
         </div>
         <p className="text-xs text-muted">
-          Verwaltung deines laufenden Abos (Laufzeit, Verlängern) findest du auf deiner{" "}
+          Dein aktuelles Guthaben und die Verwaltung deines laufenden Abos findest du auf deiner{" "}
           <Link href="/dashboard/akte" className="text-accent hover:underline">
             Profilseite
           </Link>

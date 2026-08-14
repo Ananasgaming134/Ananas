@@ -3,6 +3,7 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import StatCard from "@/components/StatCard";
 import LoanCountdown from "@/components/LoanCountdown";
+import Mascot from "@/components/Mascot";
 import { formatCoins, getSubscriptionPlan, LOAN_STATUS } from "@/lib/constants";
 
 const QUICK_LINKS = [
@@ -43,6 +44,7 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      <Mascot />
       <div className="fade-up card-glass relative overflow-hidden p-6 sm:p-8">
         <div className="shimmer pointer-events-none absolute inset-0" />
         <span className="pointer-events-none absolute -right-8 -top-8 text-[8rem] opacity-[0.06] select-none">

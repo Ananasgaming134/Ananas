@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { applyPaymentToPlan, checkPayments, ignorePayment } from "@/app/actions/payments";
+import { checkPayments, creditPaymentToBalance, ignorePayment } from "@/app/actions/payments";
 import { isRefundEligible } from "@/lib/subscriptions";
-import { ROLES, SUBSCRIPTION_PLANS } from "@/lib/constants";
+import { ROLES } from "@/lib/constants";
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "Ausstehend",
@@ -35,8 +35,8 @@ export default async function ZahlungenPage() {
           <h1 className="text-xl font-semibold">Zahlungen</h1>
           <p className="mt-1 text-sm text-muted">
             Eingehende Business-Card-Überweisungen (BC-584289), automatisch per Discord-Username
-            zugeordnet. Die Bestätigung zu einem Abo-Plan bleibt manuell &ndash; die Business-Card-
-            Währung (₵) hat eine andere Skala als unsere Abo-Preise.
+            zugeordnet. Gutschreiben legt den Betrag als Guthaben (1 ₵ = 1 $) auf dem Konto an
+            &ndash; das Abbuchen eines Pakets passiert separat auf der Akte-Seite.
           </p>
         </div>
         <form action={checkPayments}>
@@ -76,6 +76,7 @@ export default async function ZahlungenPage() {
                       <Link href={`/dashboard/akte/${payment.member.id}`} className="hover:underline">
                         {payment.member.displayName}
                       </Link>
+                      <p className="text-[11px] text-muted">Guthaben: {payment.member.balance.toLocaleString("en-US")} $</p>
                       {payment.member.lockedAt && (
                         <p className={`mt-0.5 text-[11px] ${isRefundEligible(payment.member) ? "text-danger" : "text-muted"}`}>
                           {isRefundEligible(payment.member)
@@ -91,23 +92,12 @@ export default async function ZahlungenPage() {
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-2">
                     {payment.member && (
-                      <form action={applyPaymentToPlan.bind(null, payment.id)} className="flex items-center gap-1.5">
-                        <select
-                          name="planId"
-                          defaultValue={SUBSCRIPTION_PLANS[0].id}
-                          className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs outline-none ring-accent/40 focus:ring-2"
-                        >
-                          {SUBSCRIPTION_PLANS.map((plan) => (
-                            <option key={plan.id} value={plan.id}>
-                              {plan.label}
-                            </option>
-                          ))}
-                        </select>
+                      <form action={creditPaymentToBalance.bind(null, payment.id)}>
                         <button
                           type="submit"
                           className="rounded-md border border-accent-2/40 bg-accent-2/10 px-2.5 py-1.5 text-xs font-medium text-accent-2 transition hover:bg-accent-2/20"
                         >
-                          Bestätigen
+                          💰 Gutschreiben
                         </button>
                       </form>
                     )}

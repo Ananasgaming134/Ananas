@@ -5,7 +5,14 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { canManage, MEMBER_STATUS, ROLES } from "@/lib/constants";
-import { lockMemberCore, pauseMemberCore, resumeMemberCore, setSubscriptionPlanCore, unlockMemberCore } from "@/lib/subscriptions";
+import {
+  adjustBalanceCore,
+  lockMemberCore,
+  pauseMemberCore,
+  resumeMemberCore,
+  setSubscriptionPlanCore,
+  unlockMemberCore,
+} from "@/lib/subscriptions";
 
 function refreshMemberPages(memberId: string) {
   revalidatePath(`/dashboard/akte/${memberId}`);
@@ -116,18 +123,52 @@ export async function reinstateAccess(memberId: string) {
   refreshMemberPages(memberId);
 }
 
+export type AdjustBalanceState = { ok: boolean; error?: string } | null;
+
 /**
- * Weist einem Kunden ein Abo zu bzw. verlaengert es. Laeuft die aktuelle
- * Laufzeit noch, wird das neue Abo daran angehaengt statt ab heute zu
- * zaehlen (frueh verlaengern verschenkt also keine Zeit).
+ * Manuelle Guthaben-Buchung durch die Führungsebene (nur Owner) - z.B. wenn
+ * eine Zahlung nicht automatisch erkannt wurde, oder für Korrekturen/Boni.
  */
-export async function setSubscriptionPlan(memberId: string, formData: FormData) {
+export async function adjustBalance(
+  memberId: string,
+  _prevState: AdjustBalanceState,
+  formData: FormData
+): Promise<AdjustBalanceState> {
+  const actor = await requireMember(ROLES.OWNER);
+  const amount = parseInt(String(formData.get("amount") ?? ""), 10);
+  const reason = String(formData.get("reason") ?? "").trim() || "Kein Grund angegeben.";
+
+  if (!Number.isFinite(amount) || amount === 0) {
+    return { ok: false, error: "Bitte einen gültigen Betrag ungleich 0 angeben." };
+  }
+
+  const result = await adjustBalanceCore(memberId, amount, reason, actor.id);
+
+  refreshMemberPages(memberId);
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
+}
+
+export type AssignPlanState = { ok: boolean; error?: string } | null;
+
+/**
+ * Bucht das gewaehlte Abo-Paket vom Guthaben des Kunden ab und verlaengert
+ * das Abo entsprechend. Laeuft die aktuelle Laufzeit noch, wird das neue Abo
+ * daran angehaengt statt ab heute zu zaehlen (frueh verlaengern verschenkt
+ * also keine Zeit). Schlaegt fehl, wenn nicht genug Guthaben vorhanden ist -
+ * der Fehler wird ueber useActionState in AboAssignForm angezeigt.
+ */
+export async function setSubscriptionPlan(
+  memberId: string,
+  _prevState: AssignPlanState,
+  formData: FormData
+): Promise<AssignPlanState> {
   const actor = await requireMember(ROLES.AUFSICHT);
   const planId = String(formData.get("planId") ?? "");
 
-  await setSubscriptionPlanCore(memberId, planId, actor.id);
+  const result = await setSubscriptionPlanCore(memberId, planId, actor.id);
 
   refreshMemberPages(memberId);
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
 /**
@@ -160,23 +201,32 @@ export async function updateMinecraftName(memberId: string, formData: FormData) 
   refreshMemberPages(memberId);
 }
 
+/**
+ * Schliesst ein Mitglied dauerhaft aus (Regelverstoss). Loescht dabei auch
+ * das komplette Guthaben - anders als bei Freigabe-Entzug (revokeAccess)
+ * bleibt bei einem Bann nichts uebrig, siehe Guthaben-Regeln in
+ * src/lib/subscriptions.ts.
+ */
 export async function banMember(memberId: string, formData: FormData) {
   const actor = await requireMember(ROLES.AUFSICHT);
   const target = await prisma.member.findUnique({ where: { id: memberId } });
   if (!target || !canManage(actor.role, target.role)) return;
 
   const reason = String(formData.get("reason") ?? "").trim() || null;
+  const forfeitedBalance = target.balance;
 
   await prisma.member.update({
     where: { id: memberId },
-    data: { status: MEMBER_STATUS.BANNED, bannedAt: new Date(), bannedReason: reason },
+    data: { status: MEMBER_STATUS.BANNED, bannedAt: new Date(), bannedReason: reason, balance: 0 },
   });
 
   await logAction({
     actorId: actor.id,
     targetId: memberId,
     action: "MEMBER_BANNED",
-    details: `Dauerhaft ausgeschlossen. Grund: ${reason ?? "-"}. TODO: Discord-Rolle ${target.discordId} manuell entfernen (Bot folgt).`,
+    details: `Dauerhaft ausgeschlossen. Grund: ${reason ?? "-"}.${
+      forfeitedBalance > 0 ? ` Guthaben von ${forfeitedBalance}$ verfällt.` : ""
+    } TODO: Discord-Rolle ${target.discordId} manuell entfernen (Bot folgt).`,
   });
 
   refreshMemberPages(memberId);

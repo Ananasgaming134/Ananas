@@ -62,10 +62,13 @@ model Member {
   age            Int?
   playHours      Int?
 
-  // Offener Restbetrag der aktuellen Verlaengerung, in $ (1 ₵ = 1 $) - siehe
-  // applyPaymentToPlan in src/app/actions/payments.ts. Erst wenn 0 erreicht
-  // ist, wird feePaidUntil tatsaechlich verlaengert.
-  openBalance    Int      @default(0)
+  // Guthaben in $ (1 ₵ = 1 $): Business-Card-Zahlungen werden hier
+  // gutgeschrieben (siehe creditPaymentToBalance in src/lib/payments.ts),
+  // nicht direkt einem Abo zugeordnet. Owner "buchen" davon ein Abo-Paket ab
+  // (setSubscriptionPlanCore in src/lib/subscriptions.ts). Es gibt keine
+  // Auszahlung/Rueckueberweisung an den Kunden - Guthaben bleibt dauerhaft
+  // hinterlegt und wird nur bei Bann (Regelverstoss) geloescht.
+  balance        Int      @default(0)
 
   // "Sperren" (Owner) = Abo laeuft nur noch bis feePaidUntil aus, keine
   // weitere Verlaengerung moeglich - anders als BANNED/REVOKED (sofortiger
