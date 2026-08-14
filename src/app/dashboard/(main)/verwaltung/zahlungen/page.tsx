@@ -76,7 +76,9 @@ export default async function ZahlungenPage() {
                       <Link href={`/dashboard/akte/${payment.member.id}`} className="hover:underline">
                         {payment.member.displayName}
                       </Link>
-                      <p className="text-[11px] text-muted">Guthaben: {payment.member.balance.toLocaleString("en-US")} $</p>
+                      <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                        💰 ${payment.member.balance.toLocaleString("en-US")}
+                      </span>
                       {payment.member.lockedAt && (
                         <p className={`mt-0.5 text-[11px] ${isRefundEligible(payment.member) ? "text-danger" : "text-muted"}`}>
                           {isRefundEligible(payment.member)

@@ -28,6 +28,10 @@ export default async function AboPage() {
         <p className="mt-2 text-sm text-muted">
           Je länger die Laufzeit, desto günstiger pro Monat — jederzeit wechselbar.
         </p>
+        <span className="mt-4 inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-1.5 text-sm font-medium text-accent">
+          <span aria-hidden>💰</span>
+          Dein Guthaben: {formatCoins(member.balance)}
+        </span>
       </div>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">

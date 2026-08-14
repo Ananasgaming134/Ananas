@@ -274,7 +274,7 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
       >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-semibold">Abo</h2>
               {currentPlan && (
                 <span
@@ -287,6 +287,10 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
                   {isExpired ? "Abgelaufen" : "Aktiv"}
                 </span>
               )}
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent">
+                <span aria-hidden>💰</span>
+                {formatCoins(target.balance)} Guthaben
+              </span>
             </div>
             {currentPlan ? (
               <p className="mt-1.5 text-sm text-muted">
@@ -317,9 +321,6 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
                 />
               </div>
             )}
-            <p className="mt-2 text-xs text-muted">
-              Guthaben: <span className="text-foreground">{formatCoins(target.balance)}</span>
-            </p>
             {showOwnerActions && (
               <div className="mt-2">
                 <BalanceAdjustForm memberId={target.id} />
@@ -341,8 +342,7 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
               <span className="font-mono text-foreground">
                 Verleih {target.customerNumber ?? "-"}
               </span>{" "}
-              (deine Kundennummer). Der Betrag wird als Guthaben (aktuell{" "}
-              <span className="text-foreground">{formatCoins(target.balance)}</span>) auf deinem
+              (deine Kundennummer). Der Betrag wird als Guthaben auf deinem
               Konto gutgeschrieben und bleibt dort dauerhaft hinterlegt &ndash; die Aufsicht bucht
               davon dann dein gewünschtes Paket ab. Eine Rücküberweisung ist nicht möglich.
             </p>
