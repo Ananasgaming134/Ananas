@@ -59,11 +59,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Gebannte Mitglieder kommen unter keinen Umständen mehr rein.
       if (existing?.status === MEMBER_STATUS.BANNED) return false;
 
-      // Ohne aktuell gültige LeihCenter-Rolle in Discord gibt es keinen Zugriff,
-      // außer für bereits archivierte, nicht gesperrte Mitglieder mit einer
-      // gültigen Rolle in der Datenbank (z.B. kurzzeitiger API-Ausfall).
+      // Wer auf der roten Liste steht (endgültig abgelehnte Bewerbung), kommt
+      // ebenfalls nicht rein - unabhängig davon, ob je ein Member-Datensatz
+      // existiert hat.
+      const blocked = await prisma.applicationBlock.findUnique({ where: { discordId } });
+      if (blocked) return false;
+
+      // Ohne aktuell gültige LeihCenter-Rolle in Discord UND ohne bereits
+      // archiviertes aktives Mitglied gibt es keinen Zugriff auf den
+      // eigentlichen Kundenbereich - der Login selbst wird aber trotzdem
+      // erlaubt (return true, ohne Member anzulegen), damit sich jemand ohne
+      // Rolle überhaupt für eine Kunden-Bewerbung einloggen kann (siehe
+      // /bewerbung). requireMember() bleibt für den echten Dashboard-Bereich
+      // weiterhin voll sperrend, da dort kein memberId in der Session steht.
       if (!resolvedRole) {
-        if (!existing || existing.status !== MEMBER_STATUS.ACTIVE) return false;
+        if (!existing || existing.status !== MEMBER_STATUS.ACTIVE) return true;
       }
 
       const username = user.username ?? "unbekannt";

@@ -20,6 +20,19 @@ export const CATEGORY_PAGE_PREFIX = "leihcenter_category_page:";
 /** Wert im Kategorie-Select fuer Items ohne zugeordnete Kategorie. */
 export const NO_CATEGORY_VALUE = "__none";
 
+// Ticket-System: Panel-Buttons oeffnen ein Discord-Modal (Text-Eingaben,
+// keine Selects moeglich - deshalb Bewerbung zweistufig: erst Paket per
+// Select waehlen, dann Modal). custom_id-Format bei Claim/Close:
+// `${PREFIX}${ticketId}`.
+export const TICKET_OPEN_SUPPORT_ID = "leihcenter_ticket_open_support";
+export const TICKET_OPEN_BEWERBUNG_ID = "leihcenter_ticket_open_bewerbung";
+export const TICKET_PLAN_SELECT_ID = "leihcenter_ticket_plan_select";
+export const TICKET_CLAIM_PREFIX = "leihcenter_ticket_claim:";
+export const TICKET_CLOSE_PREFIX = "leihcenter_ticket_close:";
+export const SUPPORT_MODAL_ID = "leihcenter_support_modal";
+/** custom_id-Format: `${BEWERBUNG_MODAL_PREFIX}${planId}` - das Paket wurde im vorherigen Schritt per Select gewaehlt. */
+export const BEWERBUNG_MODAL_PREFIX = "leihcenter_bewerbung_modal:";
+
 export type DiscordInteractionUser = {
   id: string;
   username: string;
@@ -48,8 +61,20 @@ export type DiscordInteractionPayload = {
     custom_id?: string;
     values?: string[];
     options?: DiscordInteractionOption[];
+    // Nur bei MODAL_SUBMIT gesetzt: eine Action-Row je Textfeld.
+    components?: Array<{ components: Array<{ custom_id: string; value: string }> }>;
   };
 };
+
+/** Liest ein Textfeld aus einem MODAL_SUBMIT-Payload anhand seiner custom_id aus. */
+export function getModalValue(interaction: DiscordInteractionPayload, customId: string): string {
+  const rows = interaction.data?.components ?? [];
+  for (const row of rows) {
+    const field = row.components.find((c) => c.custom_id === customId);
+    if (field) return field.value;
+  }
+  return "";
+}
 
 function avatarUrlFor(user: DiscordInteractionUser): string | null {
   return user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png` : null;

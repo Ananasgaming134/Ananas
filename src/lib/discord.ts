@@ -1,4 +1,4 @@
-import { ROLES, type RoleValue } from "@/lib/constants";
+import { ROLES, SUBSCRIPTION_PLANS, type RoleValue } from "@/lib/constants";
 
 export const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID ?? "";
 export const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN ?? "";
@@ -137,6 +137,158 @@ export async function sendDiscordDirectMessage(
   return { ok: true };
 }
 
+/**
+ * Vergibt eine Discord-Server-Rolle live per Bot-Token
+ * (PUT /guilds/{guild}/members/{user}/roles/{role}). Wird bei Annahme einer
+ * Kunden-Bewerbung genutzt, damit die Person sofort die Kunde-Rolle (und
+ * damit Zugriff aufs LeihCenter) bekommt, ohne dass das jemand manuell in
+ * Discord nachtragen muss. Schlaegt z.B. fehl, wenn die Person den Server
+ * verlassen hat oder der Bot keine Berechtigung dafuer hat.
+ */
+export async function grantGuildRole(
+  guildId: string,
+  userId: string,
+  roleId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${guildId}/members/${userId}/roles/${roleId}`,
+    { method: "PUT", headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}` } }
+  );
+  if (!res.ok && res.status !== 204) {
+    return { ok: false, error: `Rolle konnte nicht vergeben werden (${res.status}).` };
+  }
+  return { ok: true };
+}
+
+// Discord-Kanal-/Berechtigungs-Konstanten fuers Ticket-System (siehe
+// src/lib/tickets.ts). Werte aus der offiziellen Discord-API-Dokumentation.
+const CHANNEL_TYPE_GUILD_TEXT = 0;
+const CHANNEL_TYPE_GUILD_CATEGORY = 4;
+const OVERWRITE_TYPE_ROLE = 0;
+const OVERWRITE_TYPE_MEMBER = 1;
+const PERM_VIEW_CHANNEL = 1 << 10; // 1024
+const PERM_SEND_MESSAGES = 1 << 11; // 2048
+const PERM_READ_HISTORY = 1 << 16; // 65536
+const TICKET_ALLOW = String(PERM_VIEW_CHANNEL | PERM_SEND_MESSAGES | PERM_READ_HISTORY);
+
+type PermissionOverwrite = { id: string; type: number; allow?: string; deny?: string };
+
+/**
+ * Legt eine private Kanal-Kategorie an - @everyone sieht sie nicht. Wird
+ * einmalig fuer die Ticket-Kanaele eines Servers aufgerufen, die ID landet
+ * in BotDeployment.ticketCategoryId.
+ */
+export async function createTicketCategory(
+  guildId: string,
+  name = "Tickets"
+): Promise<{ ok: true; categoryId: string } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const res = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      type: CHANNEL_TYPE_GUILD_CATEGORY,
+      permission_overwrites: [{ id: guildId, type: OVERWRITE_TYPE_ROLE, deny: String(PERM_VIEW_CHANNEL) }],
+    }),
+  });
+  if (!res.ok) return { ok: false, error: `Kategorie konnte nicht erstellt werden (${res.status}).` };
+  const channel = (await res.json()) as { id: string };
+  return { ok: true, categoryId: channel.id };
+}
+
+/**
+ * Erstellt einen privaten Ticket-Kanal unter der angegebenen Kategorie -
+ * sichtbar nur fuer die eroeffnende Person, die uebergebenen Claim-Rollen
+ * und (falls per Env konfiguriert) die Owner-Rolle.
+ */
+export async function createTicketChannel(
+  guildId: string,
+  categoryId: string | null,
+  channelName: string,
+  applicantDiscordId: string,
+  claimRoleIds: string[]
+): Promise<{ ok: true; channelId: string } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const ownerRoleId = roleIdsFromEnv("DISCORD_ROLE_OWNER")[0];
+  const overwrites: PermissionOverwrite[] = [
+    { id: guildId, type: OVERWRITE_TYPE_ROLE, deny: String(PERM_VIEW_CHANNEL) },
+    { id: applicantDiscordId, type: OVERWRITE_TYPE_MEMBER, allow: TICKET_ALLOW },
+    ...claimRoleIds.map((roleId) => ({ id: roleId, type: OVERWRITE_TYPE_ROLE, allow: TICKET_ALLOW })),
+  ];
+  if (ownerRoleId && !claimRoleIds.includes(ownerRoleId)) {
+    overwrites.push({ id: ownerRoleId, type: OVERWRITE_TYPE_ROLE, allow: TICKET_ALLOW });
+  }
+
+  const res = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: channelName.slice(0, 100),
+      type: CHANNEL_TYPE_GUILD_TEXT,
+      parent_id: categoryId ?? undefined,
+      permission_overwrites: overwrites,
+    }),
+  });
+  if (!res.ok) return { ok: false, error: `Ticket-Kanal konnte nicht erstellt werden (${res.status}).` };
+  const channel = (await res.json()) as { id: string };
+  return { ok: true, channelId: channel.id };
+}
+
+/**
+ * Entzieht der eroeffnenden Person das Schreibrecht in ihrem Ticket-Kanal
+ * (Ansehen bleibt moeglich) - genutzt beim Schliessen eines Tickets. Der
+ * Kanal wird bewusst NICHT geloescht, bleibt also als Verlauf erhalten.
+ */
+export async function revokeChannelSendPermission(
+  channelId: string,
+  userId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type: OVERWRITE_TYPE_MEMBER,
+      allow: String(PERM_VIEW_CHANNEL),
+      deny: String(PERM_SEND_MESSAGES),
+    }),
+  });
+  if (!res.ok && res.status !== 204) return { ok: false, error: `Konnte Kanal nicht sperren (${res.status}).` };
+  return { ok: true };
+}
+
+/**
+ * Schaltet die Sichtbarkeit eines Kanals fuer eine Rolle an/aus - genutzt
+ * fuer den "Tickets sichtbar fuer Kunden"-Schalter des Ticket-Panels.
+ */
+export async function setChannelRoleVisibility(
+  channelId: string,
+  roleId: string,
+  visible: boolean
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/permissions/${roleId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify(
+      visible
+        ? { type: OVERWRITE_TYPE_ROLE, allow: String(PERM_VIEW_CHANNEL), deny: "0" }
+        : { type: OVERWRITE_TYPE_ROLE, allow: "0", deny: String(PERM_VIEW_CHANNEL) }
+    ),
+  });
+  if (!res.ok && res.status !== 204) {
+    return { ok: false, error: `Sichtbarkeit konnte nicht geändert werden (${res.status}).` };
+  }
+  return { ok: true };
+}
+
 export type DiscordGuildMember = {
   discordId: string;
   username: string;
@@ -235,6 +387,10 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
         description: "Zeigt deine aktuell ausgeliehenen Items mit Rückgabe-Button (nur für dich sichtbar)",
       },
       {
+        name: "bewerben",
+        description: "Bewirb dich ums LeihCenter (Kunde werden)",
+      },
+      {
         name: "setup",
         description: "Richtet die LeihCenter-Panels in diesem Kanal ein (nur Owner)",
         options: [
@@ -255,6 +411,32 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
             type: 1, // SUB_COMMAND
             name: "status-panel",
             description: "Postet/aktualisiert das Status-Panel (aktuell ausgeliehen) in diesem Kanal",
+          },
+          {
+            type: 1, // SUB_COMMAND
+            name: "ticket-panel",
+            description: "Postet/aktualisiert das Ticket-Panel (Support/Bewerbung) in diesem Kanal",
+          },
+        ],
+      },
+      {
+        name: "abo",
+        description: "Abo-Verwaltung (nur für Aufsicht/Owner)",
+        options: [
+          {
+            type: 1, // SUB_COMMAND
+            name: "setzen",
+            description: "Setzt das Abo-Paket eines Mitglieds",
+            options: [
+              { type: 6, name: "user", description: "Für wen das Paket gesetzt wird", required: true }, // USER
+              {
+                type: 3, // STRING
+                name: "paket",
+                description: "Welches Paket",
+                required: true,
+                choices: SUBSCRIPTION_PLANS.map((p) => ({ name: p.label, value: p.id })),
+              },
+            ],
           },
         ],
       },

@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { postOrUpdatePanel } from "@/lib/discordPanel";
-import { registerSlashCommands } from "@/lib/discord";
+import { postOrUpdatePanel, postOrUpdateTicketPanel } from "@/lib/discordPanel";
+import { registerSlashCommands, roleIdsFromEnv, setChannelRoleVisibility } from "@/lib/discord";
 import { postSubscriptionReminders } from "@/lib/subscriptions";
 import { ROLES } from "@/lib/constants";
 
@@ -15,6 +15,15 @@ function refreshBotPages() {
 
 function onlyDigits(value: FormDataEntryValue | null): string {
   return String(value ?? "").trim().replace(/[^0-9]/g, "");
+}
+
+/** Wie onlyDigits, aber fuer eine kommagetrennte Liste von Rollen-IDs (Ziffern pro Segment). */
+function onlyDigitsList(value: FormDataEntryValue | null): string {
+  return String(value ?? "")
+    .split(",")
+    .map((s) => s.trim().replace(/[^0-9]/g, ""))
+    .filter(Boolean)
+    .join(",");
 }
 
 export async function addBotDeployment(formData: FormData) {
@@ -103,6 +112,66 @@ export async function checkSubscriptionReminders() {
     details: result.ok
       ? `${result.posted} Abo-Erinnerung(en) gepostet.`
       : `Fehlgeschlagen: ${result.error}`,
+  });
+
+  refreshBotPages();
+}
+
+/**
+ * Speichert die Ticket-Konfiguration eines Servers (Claim-Rollen pro
+ * Kategorie, Sichtbarkeit fuer die Kunde-Rolle) und synchronisiert die
+ * Sichtbarkeit direkt mit Discord, falls das Ticket-Panel bereits gepostet ist.
+ */
+export async function updateTicketConfig(deploymentId: string, formData: FormData) {
+  const member = await requireMember(ROLES.OWNER);
+  const deployment = await prisma.botDeployment.findUnique({ where: { id: deploymentId } });
+  if (!deployment) return;
+
+  const supportClaimRoleIds = onlyDigitsList(formData.get("supportClaimRoleIds")) || null;
+  const bewerbungClaimRoleIds = onlyDigitsList(formData.get("bewerbungClaimRoleIds")) || null;
+  const ticketsVisibleToCustomers = formData.get("ticketsVisibleToCustomers") === "on";
+
+  await prisma.botDeployment.update({
+    where: { id: deploymentId },
+    data: { supportClaimRoleIds, bewerbungClaimRoleIds, ticketsVisibleToCustomers },
+  });
+
+  await logAction({
+    actorId: member.id,
+    action: "TICKET_CONFIG_SAVED",
+    details: `Ticket-Konfiguration für Server ${deployment.guildId} aktualisiert (sichtbar für Kunden: ${
+      ticketsVisibleToCustomers ? "ja" : "nein"
+    }).`,
+  });
+
+  const kundeRoleId = roleIdsFromEnv("DISCORD_ROLE_KUNDE")[0];
+  if (deployment.ticketPanelChannelId && kundeRoleId) {
+    await setChannelRoleVisibility(deployment.ticketPanelChannelId, kundeRoleId, ticketsVisibleToCustomers).catch(
+      () => {}
+    );
+  }
+
+  refreshBotPages();
+}
+
+/** "/setup ticket-panel"-Aequivalent von der Website aus - postet/aktualisiert das Ticket-Panel im angegebenen Kanal. */
+export async function setupTicketPanel(deploymentId: string, formData: FormData) {
+  const member = await requireMember(ROLES.OWNER);
+  const deployment = await prisma.botDeployment.findUnique({ where: { id: deploymentId } });
+  if (!deployment) return;
+
+  const ticketPanelChannelId = onlyDigits(formData.get("ticketPanelChannelId"));
+  if (!ticketPanelChannelId) return;
+
+  await prisma.botDeployment.update({ where: { id: deploymentId }, data: { ticketPanelChannelId } });
+
+  const result = await postOrUpdateTicketPanel(deploymentId);
+  await logAction({
+    actorId: member.id,
+    action: result.ok ? "BOT_PANEL_POSTED" : "BOT_PANEL_FAILED",
+    details: result.ok
+      ? `Ticket-Panel für Server ${deployment.guildId} in Kanal ${ticketPanelChannelId} eingerichtet.`
+      : `Ticket-Panel für Server ${deployment.guildId} fehlgeschlagen: ${result.error}`,
   });
 
   refreshBotPages();

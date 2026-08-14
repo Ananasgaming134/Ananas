@@ -2,17 +2,39 @@ import { InteractionResponseType, InteractionType, verifyKey } from "discord-int
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { borrowItemCore, returnLoanCore } from "@/lib/loans";
-import { buildCategoryItemSelectPayload, postOrUpdatePanel, refreshPanelsQuietly } from "@/lib/discordPanel";
-import { RENEW_PREFIX, setSubscriptionPlanCore } from "@/lib/subscriptions";
 import {
+  buildCategoryItemSelectPayload,
+  postOrUpdatePanel,
+  postOrUpdateTicketPanel,
+  refreshPanelsQuietly,
+} from "@/lib/discordPanel";
+import { RENEW_PREFIX, setSubscriptionPlanCore } from "@/lib/subscriptions";
+import { applyAndOpenTicketCore } from "@/lib/applications";
+import {
+  TICKET_CATEGORY,
+  canManageTicket,
+  claimTicketCore,
+  closeTicketCore,
+  createTicketCore,
+  type TicketCategoryValue,
+} from "@/lib/tickets";
+import {
+  BEWERBUNG_MODAL_PREFIX,
   BORROW_PREFIX,
   CATEGORY_ITEM_SELECT_ID,
   CATEGORY_PAGE_PREFIX,
   PANEL_CATEGORY_SELECT_ID,
   PANEL_SELECT_ID,
   RETURN_PREFIX,
+  SUPPORT_MODAL_ID,
+  TICKET_CLAIM_PREFIX,
+  TICKET_CLOSE_PREFIX,
+  TICKET_OPEN_BEWERBUNG_ID,
+  TICKET_OPEN_SUPPORT_ID,
+  TICKET_PLAN_SELECT_ID,
   buildAkteEmbedForDiscord,
   ensureMemberFromDiscordUser,
+  getModalValue,
   hasOwnerRole,
   hasStaffRole,
   type DiscordInteractionOption,
@@ -20,7 +42,7 @@ import {
   type DiscordInteractionUser,
 } from "@/lib/discordInteractions";
 import { resetWordChain } from "@/lib/wordChain";
-import { LOAN_CHANNEL, LOAN_STATUS, MEMBER_STATUS } from "@/lib/constants";
+import { LOAN_CHANNEL, LOAN_STATUS, MEMBER_STATUS, SUBSCRIPTION_PLANS } from "@/lib/constants";
 
 const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY ?? "";
 const EPHEMERAL = 64;
@@ -61,6 +83,10 @@ export async function POST(request: Request) {
     return handleComponent(interaction);
   }
 
+  if (interaction.type === InteractionType.MODAL_SUBMIT) {
+    return handleModalSubmit(interaction);
+  }
+
   return Response.json({ type: InteractionResponseType.PONG });
 }
 
@@ -93,6 +119,14 @@ async function handleCommand(interaction: DiscordInteractionPayload) {
     const discordUser = interaction.member?.user ?? interaction.user;
     if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
     return handleMeineAusleihenCommand(discordUser);
+  }
+
+  if (commandName === "bewerben") {
+    return respondWithPlanSelect();
+  }
+
+  if (commandName === "abo") {
+    return handleAboCommand(interaction, invokerRoles);
   }
 
   if (commandName !== "akte") {
@@ -154,8 +188,34 @@ async function handleSetupCommand(interaction: DiscordInteractionPayload, invoke
   if (subcommand.name === "status-panel") {
     return handleSetupStatusPanel(guildId, channelId, actor?.id ?? null);
   }
+  if (subcommand.name === "ticket-panel") {
+    return handleSetupTicketPanel(guildId, channelId, actor?.id ?? null);
+  }
 
   return ephemeral("Unbekannter Setup-Typ.");
+}
+
+async function handleSetupTicketPanel(guildId: string, channelId: string, actorId: string | null) {
+  const existing = await prisma.botDeployment.findUnique({ where: { guildId } });
+  if (!existing) {
+    return ephemeral("Bitte zuerst „/setup item-panel“ ausführen, um diesen Server einzurichten.");
+  }
+
+  await prisma.botDeployment.update({ where: { guildId }, data: { ticketPanelChannelId: channelId } });
+  const result = await postOrUpdateTicketPanel(existing.id);
+  await logAction({
+    actorId,
+    action: result.ok ? "BOT_PANEL_POSTED" : "BOT_PANEL_FAILED",
+    details: result.ok
+      ? `Ticket-Panel für Server ${guildId} per /setup in Kanal ${channelId} eingerichtet.`
+      : `Ticket-Panel für Server ${guildId} per /setup fehlgeschlagen: ${result.error}`,
+  });
+
+  return ephemeral(
+    result.ok
+      ? "✅ Ticket-Panel wurde in diesem Kanal eingerichtet/aktualisiert. Sichtbarkeit für Kunden lässt sich in der Verwaltung auf der Website umschalten."
+      : `❌ ${result.error}`
+  );
 }
 
 async function handleSetupItemPanel(
@@ -269,7 +329,252 @@ async function handleComponent(interaction: DiscordInteractionPayload) {
     return handleRenew(param, memberRoles, discordUser, interaction);
   }
 
+  if (customId === TICKET_OPEN_SUPPORT_ID) {
+    return Response.json({
+      type: InteractionResponseType.MODAL,
+      data: {
+        custom_id: SUPPORT_MODAL_ID,
+        title: "Support-Ticket eröffnen",
+        components: [
+          {
+            type: 1,
+            components: [
+              {
+                type: 4,
+                custom_id: "subject",
+                style: 1,
+                label: "Worum geht's? (kurz)",
+                max_length: 100,
+                required: true,
+              },
+            ],
+          },
+          {
+            type: 1,
+            components: [
+              {
+                type: 4,
+                custom_id: "description",
+                style: 2,
+                label: "Beschreibung",
+                max_length: 1000,
+                required: false,
+              },
+            ],
+          },
+        ],
+      },
+    });
+  }
+
+  if (customId === TICKET_OPEN_BEWERBUNG_ID) {
+    return respondWithPlanSelect();
+  }
+
+  if (customId === TICKET_PLAN_SELECT_ID) {
+    const planId = interaction.data?.values?.[0];
+    if (!planId) return ephemeral("Kein Paket ausgewählt.");
+    return respondWithBewerbungModal(planId);
+  }
+
+  if (customId.startsWith(TICKET_CLAIM_PREFIX)) {
+    const ticketId = customId.slice(TICKET_CLAIM_PREFIX.length);
+    return handleTicketClaim(ticketId, memberRoles, discordUser, interaction);
+  }
+
+  if (customId.startsWith(TICKET_CLOSE_PREFIX)) {
+    const ticketId = customId.slice(TICKET_CLOSE_PREFIX.length);
+    return handleTicketClose(ticketId, memberRoles, discordUser, interaction);
+  }
+
   return ephemeral("Unbekannte Aktion.");
+}
+
+/** Schritt 1 der Bewerbung per Discord: Abo-Paket waehlen (Modals erlauben keine Selects). */
+function respondWithPlanSelect() {
+  return Response.json({
+    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+    data: {
+      content: "Welches Abo-Paket möchtest du beantragen?",
+      flags: EPHEMERAL,
+      components: [
+        {
+          type: 1,
+          components: [
+            {
+              type: 3,
+              custom_id: TICKET_PLAN_SELECT_ID,
+              placeholder: "Paket auswählen...",
+              options: SUBSCRIPTION_PLANS.map((p) => ({
+                label: p.label,
+                value: p.id,
+                description: `$${p.price.toLocaleString("en-US")}`,
+              })),
+            },
+          ],
+        },
+      ],
+    },
+  });
+}
+
+/** Schritt 2 der Bewerbung per Discord: das eigentliche Modal mit dem gewaehlten Paket im custom_id. */
+function respondWithBewerbungModal(planId: string) {
+  return Response.json({
+    type: InteractionResponseType.MODAL,
+    data: {
+      custom_id: `${BEWERBUNG_MODAL_PREFIX}${planId}`,
+      title: "Bewerbung ums LeihCenter",
+      components: [
+        {
+          type: 1,
+          components: [
+            {
+              type: 4,
+              custom_id: "reason",
+              style: 2,
+              label: "Warum möchtest du ausleihen?",
+              max_length: 500,
+              required: true,
+            },
+          ],
+        },
+        {
+          type: 1,
+          components: [
+            {
+              type: 4,
+              custom_id: "netWorth",
+              style: 1,
+              label: "Dein Gesamtvermögen (Zahl)",
+              max_length: 20,
+              required: true,
+            },
+          ],
+        },
+        {
+          type: 1,
+          components: [
+            {
+              type: 4,
+              custom_id: "items",
+              style: 2,
+              label: "Items als Nachweis (optional, frei)",
+              placeholder: "z.B. 2x Diamantschwert ~500000, 1x Elytra ~2000000",
+              max_length: 500,
+              required: false,
+            },
+          ],
+        },
+      ],
+    },
+  });
+}
+
+async function handleModalSubmit(interaction: DiscordInteractionPayload) {
+  const customId = interaction.data?.custom_id ?? "";
+  const discordUser = interaction.member?.user ?? interaction.user;
+  if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
+
+  if (customId === SUPPORT_MODAL_ID) {
+    const subject = getModalValue(interaction, "subject") || "Support-Anfrage";
+    const description = getModalValue(interaction, "description");
+    const member = await prisma.member.findUnique({ where: { discordId: discordUser.id } });
+
+    const result = await createTicketCore({
+      category: TICKET_CATEGORY.SUPPORT,
+      subject,
+      applicantDiscordId: discordUser.id,
+      memberId: member?.id ?? null,
+      initialMessage: description || undefined,
+    });
+
+    return ephemeral(
+      result.ok
+        ? "✅ Ticket wurde erstellt — du findest den Kanal auch auf der Website unter „Meine Tickets“."
+        : `❌ ${result.error}`
+    );
+  }
+
+  if (customId.startsWith(BEWERBUNG_MODAL_PREFIX)) {
+    const planId = customId.slice(BEWERBUNG_MODAL_PREFIX.length);
+    const reason = getModalValue(interaction, "reason");
+    const netWorthRaw = getModalValue(interaction, "netWorth");
+    const declaredNetWorth = parseInt(netWorthRaw.replace(/[^\d]/g, ""), 10);
+    const itemsText = getModalValue(interaction, "items");
+
+    if (!reason || !Number.isFinite(declaredNetWorth)) {
+      return ephemeral("❌ Bitte Grund und ein gültiges Gesamtvermögen angeben.");
+    }
+
+    const result = await applyAndOpenTicketCore({
+      discordId: discordUser.id,
+      username: discordUser.username,
+      displayName: discordUser.global_name ?? discordUser.username,
+      avatarUrl: discordUser.avatar
+        ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
+        : null,
+      reason,
+      declaredNetWorth,
+      requestedPlanId: planId,
+      source: "DISCORD",
+      items: itemsText ? [{ name: itemsText.slice(0, 500), declaredPrice: 0, quantity: 1 }] : undefined,
+    });
+
+    return ephemeral(
+      result.ok
+        ? "✅ Bewerbung eingereicht! Du wirst benachrichtigt, sobald sie geprüft wurde."
+        : `❌ ${result.error}`
+    );
+  }
+
+  return ephemeral("Unbekanntes Formular.");
+}
+
+async function handleTicketClaim(
+  ticketId: string,
+  memberRoles: string[],
+  discordUser: DiscordInteractionUser,
+  interaction: DiscordInteractionPayload
+) {
+  const deployment = interaction.guild_id
+    ? await prisma.botDeployment.findUnique({ where: { guildId: interaction.guild_id } })
+    : null;
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) return ephemeral("Ticket nicht gefunden.");
+  if (!deployment || !canManageTicket(ticket.category as TicketCategoryValue, deployment, memberRoles)) {
+    return ephemeral("Du bist nicht berechtigt, dieses Ticket zu übernehmen.");
+  }
+
+  const actor = await ensureMemberFromDiscordUser(discordUser);
+  const result = await claimTicketCore(ticketId, actor.id);
+  if (!result.ok) return ephemeral(`❌ ${result.error}`);
+
+  const actorLabel = discordUser.global_name ?? discordUser.username;
+  return ephemeral(`🙋 Ticket übernommen von ${actorLabel}.`);
+}
+
+async function handleTicketClose(
+  ticketId: string,
+  memberRoles: string[],
+  discordUser: DiscordInteractionUser,
+  interaction: DiscordInteractionPayload
+) {
+  const deployment = interaction.guild_id
+    ? await prisma.botDeployment.findUnique({ where: { guildId: interaction.guild_id } })
+    : null;
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) return ephemeral("Ticket nicht gefunden.");
+  if (!deployment || !canManageTicket(ticket.category as TicketCategoryValue, deployment, memberRoles)) {
+    return ephemeral("Du bist nicht berechtigt, dieses Ticket zu schließen.");
+  }
+
+  const actor = await ensureMemberFromDiscordUser(discordUser);
+  const result = await closeTicketCore(ticketId, actor.id);
+  if (!result.ok) return ephemeral(`❌ ${result.error}`);
+
+  const actorLabel = discordUser.global_name ?? discordUser.username;
+  return ephemeral(`🔒 Ticket geschlossen von ${actorLabel}.`);
 }
 
 async function handleRenew(
@@ -298,6 +603,33 @@ async function handleRenew(
       components: [],
     },
   });
+}
+
+/** "/abo setzen" - direktes Setzen des Abo-Pakets eines Mitglieds, ohne auf eine Ablauf-Erinnerung zu warten. */
+async function handleAboCommand(interaction: DiscordInteractionPayload, invokerRoles: string[]) {
+  if (!hasStaffRole(invokerRoles)) {
+    return ephemeral("Nur Aufsichtspersonen und Owner können Abos ändern.");
+  }
+
+  const subcommand = interaction.data?.options?.[0];
+  if (subcommand?.name !== "setzen") return ephemeral("Unbekannter Abo-Befehl.");
+
+  const targetDiscordId = subcommand.options?.find((o) => o.name === "user")?.value;
+  const planId = subcommand.options?.find((o) => o.name === "paket")?.value;
+  if (!targetDiscordId || !planId) return ephemeral("Bitte Person und Paket angeben.");
+
+  const target = await prisma.member.findUnique({ where: { discordId: targetDiscordId } });
+  if (!target) return ephemeral("Für diese Person existiert noch keine Akte.");
+
+  const discordUser = interaction.member?.user ?? interaction.user;
+  const actor = discordUser ? await prisma.member.findUnique({ where: { discordId: discordUser.id } }) : null;
+
+  const result = await setSubscriptionPlanCore(target.id, planId, actor?.id ?? null);
+  if (!result.ok) return ephemeral(`❌ ${result.error}`);
+
+  return ephemeral(
+    `✅ Abo von ${target.displayName} auf ${result.plan.label} gesetzt — läuft jetzt bis ${result.newExpiry.toLocaleDateString("de-DE")}.`
+  );
 }
 
 async function checkBorrowPermission(guildId: string | undefined, memberRoles: string[]) {

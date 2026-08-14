@@ -7,6 +7,8 @@ import {
   NO_CATEGORY_VALUE,
   PANEL_CATEGORY_SELECT_ID,
   PANEL_SELECT_ID,
+  TICKET_OPEN_BEWERBUNG_ID,
+  TICKET_OPEN_SUPPORT_ID,
 } from "@/lib/discordInteractions";
 
 const MAX_SELECT_OPTIONS = 25; // Discord-Select-Menues erlauben maximal 25 Optionen
@@ -255,6 +257,35 @@ async function buildStatusPanelPayload() {
   return { embeds: [embed] };
 }
 
+/**
+ * Baut das Ticket-Panel (zwei Buttons: Support / Bewerbung). Wird nur in
+ * dem Kanal gepostet, den der Owner dafuer eingerichtet hat - Sichtbarkeit
+ * fuer die Kunde-Rolle wird separat per Discord-Berechtigung gesteuert
+ * (BotDeployment.ticketsVisibleToCustomers), nicht ueber den Panel-Inhalt.
+ */
+export function buildTicketPanelPayload() {
+  const embed = {
+    title: `🎫 ${SITE_NAME} — Tickets`,
+    description:
+      "**🎧 Support** — allgemeine Fragen/Probleme, z.B. Abo pausieren.\n" +
+      "**📝 Bewerbung** — Kunde beim LeihCenter werden.",
+    color: 0x3ddc97,
+  };
+
+  return {
+    embeds: [embed],
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 1, label: "🎧 Support", custom_id: TICKET_OPEN_SUPPORT_ID },
+          { type: 2, style: 1, label: "📝 Bewerbung", custom_id: TICKET_OPEN_BEWERBUNG_ID },
+        ],
+      },
+    ],
+  };
+}
+
 type PostResult = { ok: true } | { ok: false; error: string };
 
 /** Postet eine Nachricht neu oder editiert eine vorhandene (per Message-ID) in einem Kanal. */
@@ -330,6 +361,31 @@ export async function postOrUpdatePanel(deploymentId: string): Promise<PostResul
   }
 
   return { ok: true };
+}
+
+/**
+ * Postet/aktualisiert das Ticket-Panel im vom Owner konfigurierten Kanal
+ * (BotDeployment.ticketPanelChannelId). Getrennt vom Item-Panel, da beide
+ * unabhaengig voneinander eingerichtet werden.
+ */
+export async function postOrUpdateTicketPanel(deploymentId: string): Promise<PostResult> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const deployment = await prisma.botDeployment.findUnique({ where: { id: deploymentId } });
+  if (!deployment || !deployment.ticketPanelChannelId) {
+    return { ok: false, error: "Kein Ticket-Panel-Kanal konfiguriert." };
+  }
+
+  const payload = buildTicketPanelPayload();
+  const result = await postOrUpdateMessage(deployment.ticketPanelChannelId, deployment.ticketPanelMessageId, payload);
+
+  if (result.ok && result.messageId !== deployment.ticketPanelMessageId) {
+    await prisma.botDeployment.update({
+      where: { id: deploymentId },
+      data: { ticketPanelMessageId: result.messageId },
+    });
+  }
+  return result;
 }
 
 /** Aktualisiert alle aktiven Panels - nach jeder Aenderung an Items/Ausleihen aufrufen. */

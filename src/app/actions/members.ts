@@ -5,7 +5,7 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { canManage, MEMBER_STATUS, ROLES } from "@/lib/constants";
-import { setSubscriptionPlanCore } from "@/lib/subscriptions";
+import { pauseMemberCore, resumeMemberCore, setSubscriptionPlanCore } from "@/lib/subscriptions";
 
 function refreshMemberPages(memberId: string) {
   revalidatePath(`/dashboard/akte/${memberId}`);
@@ -58,6 +58,27 @@ export async function revokeAccess(memberId: string, formData: FormData) {
     details: `Freigabe entzogen. Grund: ${reason ?? "-"}. TODO: Discord-Rolle ${target.discordId} manuell entfernen (Bot folgt).`,
   });
 
+  refreshMemberPages(memberId);
+}
+
+/** Pausiert das Abo eines Kunden - typischerweise ausgeloest ueber ein Support-Ticket. */
+export async function pauseMember(memberId: string, formData: FormData) {
+  const actor = await requireMember(ROLES.AUFSICHT);
+  const target = await prisma.member.findUnique({ where: { id: memberId } });
+  if (!target || !canManage(actor.role, target.role)) return;
+
+  const reason = String(formData.get("reason") ?? "").trim() || "Kein Grund angegeben.";
+  const ticketId = String(formData.get("ticketId") ?? "").trim() || null;
+  await pauseMemberCore(memberId, reason, actor.id, ticketId);
+  refreshMemberPages(memberId);
+}
+
+export async function resumeMember(memberId: string) {
+  const actor = await requireMember(ROLES.AUFSICHT);
+  const target = await prisma.member.findUnique({ where: { id: memberId } });
+  if (!target || !canManage(actor.role, target.role)) return;
+
+  await resumeMemberCore(memberId, actor.id);
   refreshMemberPages(memberId);
 }
 

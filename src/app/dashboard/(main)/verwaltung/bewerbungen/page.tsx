@@ -1,0 +1,162 @@
+import { requireMember } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
+import { approveApplication, blockApplicant, rejectApplication, unblockApplicant } from "@/app/actions/applications";
+import { ROLES, SUBSCRIPTION_PLANS, formatCoins } from "@/lib/constants";
+
+export default async function BewerbungenPage() {
+  await requireMember(ROLES.OWNER);
+
+  const [pending, blocks] = await Promise.all([
+    prisma.membershipApplication.findMany({
+      where: { status: "PENDING" },
+      include: { items: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.applicationBlock.findMany({ orderBy: { blockedAt: "desc" } }),
+  ]);
+
+  const ticketIds = pending.map((a) => a.ticketId).filter((id): id is string => Boolean(id));
+  const tickets = ticketIds.length > 0 ? await prisma.ticket.findMany({ where: { id: { in: ticketIds } } }) : [];
+  const ticketById = new Map(tickets.map((t) => [t.id, t]));
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-xl font-semibold">Bewerbungen</h1>
+        <p className="mt-1 text-sm text-muted">
+          Offene Kunden-Bewerbungen prüfen. Annehmen legt sofort die Akte an, vergibt die
+          Kunde-Rolle in Discord und macht die Zahlung fällig. Nur der Owner darf final entscheiden.
+        </p>
+      </div>
+
+      {pending.length === 0 ? (
+        <div className="card p-8 text-center text-sm text-muted">Keine offenen Bewerbungen.</div>
+      ) : (
+        <div className="space-y-4">
+          {pending.map((app) => {
+            const plan = SUBSCRIPTION_PLANS.find((p) => p.id === app.requestedPlanId);
+            const ticket = app.ticketId ? ticketById.get(app.ticketId) : null;
+
+            return (
+              <div key={app.id} className="card space-y-4 p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{app.displayName}</p>
+                    <p className="text-xs text-muted">
+                      @{app.username} &middot; {app.createdAt.toLocaleString("de-DE")} &middot;{" "}
+                      {app.source === "DISCORD" ? "per Discord" : "per Website"}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+                    {plan?.label ?? app.requestedPlanId} &middot; {formatCoins(plan?.price)}
+                  </span>
+                </div>
+
+                <p className="text-sm">{app.reason}</p>
+
+                <p className="text-sm text-muted">
+                  Angegebenes Gesamtvermögen: <span className="text-foreground">{formatCoins(app.declaredNetWorth)}</span>
+                </p>
+
+                {app.items.length > 0 && (
+                  <div className="rounded-lg border border-border bg-surface/60 p-3">
+                    <p className="mb-1.5 text-xs font-medium text-muted">Angegebene Items</p>
+                    <ul className="space-y-1 text-sm">
+                      {app.items.map((item) => (
+                        <li key={item.id} className="flex justify-between">
+                          <span>
+                            {item.quantity > 1 ? `${item.quantity}x ` : ""}
+                            {item.name}
+                          </span>
+                          {item.declaredPrice > 0 && <span className="text-muted">{formatCoins(item.declaredPrice)}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {ticket?.discordChannelId && (
+                  <a
+                    href={`https://discord.com/channels/${ticket.discordGuildId}/${ticket.discordChannelId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block text-xs text-accent hover:underline"
+                  >
+                    🎫 Bewerbungs-Ticket in Discord öffnen
+                  </a>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+                  <form action={approveApplication.bind(null, app.id)}>
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110"
+                    >
+                      ✅ Annehmen
+                    </button>
+                  </form>
+                  <form action={rejectApplication.bind(null, app.id)} className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      name="reason"
+                      placeholder="Grund (optional)"
+                      className="w-48 rounded-lg border border-border bg-surface px-2.5 py-2 text-xs outline-none ring-accent/40 focus:ring-2"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-lg border border-border px-3 py-2 text-xs font-medium transition hover:bg-surface-2"
+                    >
+                      Ablehnen
+                    </button>
+                  </form>
+                  <form action={blockApplicant.bind(null, app.discordId)} className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      name="reason"
+                      placeholder="Grund für rote Liste"
+                      className="w-48 rounded-lg border border-danger/40 bg-surface px-2.5 py-2 text-xs outline-none ring-danger/40 focus:ring-2"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs font-medium text-danger transition hover:bg-danger/20"
+                    >
+                      🚫 Rote Liste
+                    </button>
+                  </form>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div>
+        <h2 className="mb-3 text-sm font-semibold">Rote Liste</h2>
+        {blocks.length === 0 ? (
+          <p className="text-sm text-muted">Niemand ist aktuell dauerhaft von Bewerbungen ausgeschlossen.</p>
+        ) : (
+          <div className="card divide-y divide-border overflow-hidden">
+            {blocks.map((block) => (
+              <div key={block.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                <div>
+                  <p className="font-medium">Discord-ID {block.discordId}</p>
+                  <p className="text-xs text-muted">
+                    {block.reason} &middot; seit {block.blockedAt.toLocaleDateString("de-DE")}
+                  </p>
+                </div>
+                <form action={unblockApplicant.bind(null, block.id)}>
+                  <button
+                    type="submit"
+                    className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-surface-2"
+                  >
+                    Entfernen
+                  </button>
+                </form>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

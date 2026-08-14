@@ -10,6 +10,18 @@ export async function getSessionMember() {
 }
 
 /**
+ * Stellt nur sicher, dass überhaupt eine gültige Discord-Session existiert -
+ * anders als requireMember() OHNE Pflicht auf einen aktiven Member-Datensatz.
+ * Wird für Seiten gebraucht, die man auch VOR einer angenommenen
+ * Kunden-Bewerbung erreichen muss (z.B. /bewerbung selbst).
+ */
+export async function requireAuthenticated() {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  return { discordId: session.user.id!, session };
+}
+
+/**
  * Stellt sicher, dass ein aktives Mitglied eingeloggt ist und mindestens die
  * angegebene Rolle besitzt. Leitet ansonsten auf /login bzw. /dashboard um.
  */

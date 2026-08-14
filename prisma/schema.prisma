@@ -49,6 +49,15 @@ model Member {
   borrowSuspendedUntil  DateTime?
   borrowSuspendedReason String?
 
+  // Abo-Pause (auf Antrag per Support-Ticket): waehrend pausedAt gesetzt ist,
+  // bleibt das Mitglied aktiv, darf aber nichts ausleihen und zahlt fuer
+  // diese Zeit nicht - die pausierten Tage werden beim Fortsetzen an
+  // feePaidUntil drangehaengt (siehe resumeMemberCore in subscriptions.ts).
+  pausedAt       DateTime?
+  pauseReason    String?
+  pausedById     String?
+  pauseTicketId  String?
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -223,9 +232,103 @@ model BotDeployment {
   statusChannelId String?
   statusMessageId String?
 
+  // Ticket-System: Kategorie-Kanal, unter dem private Ticket-Kanaele
+  // entstehen, sowie das Panel ("Support"/"Bewerbung"-Buttons) in einem
+  // eigenen Kanal. ticketsVisibleToCustomers steuert, ob die Kunde-Rolle den
+  // Panel-Kanal ueberhaupt sehen darf (Owner schaltet das erst frei, wenn
+  // alles fertig eingerichtet ist). Claim-Rollen sind kommagetrennte
+  // Discord-Rollen-IDs, analog zu roleIdsFromEnv.
+  ticketCategoryId          String?
+  ticketPanelChannelId      String?
+  ticketPanelMessageId      String?
+  ticketsVisibleToCustomers Boolean   @default(false)
+  supportClaimRoleIds       String?
+  bewerbungClaimRoleIds     String?
+
   active          Boolean   @default(true)
   createdById     String?
 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+}
+
+// Bewerbung um Kunde zu werden - eingereicht per Website oder Discord
+// (/bewerben). Wird vom Owner geprueft (siehe Plan: nur Owner darf final
+// annehmen/ablehnen) und bei Annahme in einen aktiven Member ueberfuehrt.
+model MembershipApplication {
+  id               String   @id @default(cuid())
+  discordId        String
+  username         String
+  displayName      String
+  avatarUrl        String?
+
+  reason           String
+  declaredNetWorth Int
+  requestedPlanId  String
+  source           String   // WEB | DISCORD
+
+  status           String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  rejectionReason  String?
+  reviewedById     String?
+  reviewedAt       DateTime?
+  memberId         String?
+  ticketId         String?  @unique
+
+  createdAt        DateTime @default(now())
+
+  items            MembershipApplicationItem[]
+
+  @@index([discordId])
+  @@index([status])
+}
+
+// Einzelnes vom Bewerber angegebenes Item als Vermoegensnachweis - entweder
+// aus dem btc-clan-Preiskatalog gewaehlt (sourceKey gesetzt) oder frei
+// eingetragen (nur name/declaredPrice).
+model MembershipApplicationItem {
+  id            String  @id @default(cuid())
+  applicationId String
+  application   MembershipApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  sourceKey     String?
+  name          String
+  declaredPrice Int
+  quantity      Int     @default(1)
+}
+
+// Wer hier per discordId eingetragen ist, kann sich nie wieder bewerben -
+// unabhaengig davon, ob ueberhaupt je ein Member-Datensatz existiert hat.
+model ApplicationBlock {
+  id          String   @id @default(cuid())
+  discordId   String   @unique
+  reason      String
+  blockedById String?
+  blockedAt   DateTime @default(now())
+}
+
+// Support- oder Bewerbungs-Ticket. Der eigentliche Verlauf findet in einem
+// privaten Discord-Kanal statt (siehe tickets.ts/discord.ts) - die
+// Website zeigt nur Status + Link zum Kanal, kein Nachrichten-Sync.
+model Ticket {
+  id                 String    @id @default(cuid())
+  category           String    // SUPPORT | BEWERBUNG
+  subject            String
+  status             String    @default("OPEN") // OPEN | CLAIMED | CLOSED
+
+  applicantDiscordId String
+  memberId           String?
+  applicationId      String?   @unique
+
+  claimedById        String?
+  claimedAt          DateTime?
+
+  discordGuildId     String
+  discordChannelId   String?
+
+  closedById         String?
+  closedAt           DateTime?
+
+  createdAt          DateTime  @default(now())
+
+  @@index([status])
+  @@index([memberId])
 }

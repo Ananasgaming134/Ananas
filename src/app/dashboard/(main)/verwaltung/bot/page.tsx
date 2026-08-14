@@ -6,6 +6,8 @@ import {
   refreshBotPanel,
   registerSlashCommand,
   removeBotDeployment,
+  setupTicketPanel,
+  updateTicketConfig,
 } from "@/app/actions/bot";
 import { ROLES } from "@/lib/constants";
 
@@ -196,8 +198,97 @@ export default async function BotVerwaltenPage() {
         </table>
       </div>
 
+      {deployments.length > 0 && (
+        <div className="card space-y-5 p-5">
+          <div>
+            <h2 className="text-sm font-semibold">3. Ticket-System</h2>
+            <p className="mt-1.5 text-sm text-muted">
+              Bot erstellt bei jedem neuen Ticket automatisch einen privaten Kanal, sichtbar nur für
+              die eröffnende Person, die hier festgelegten Rollen und den Owner. Das Panel selbst
+              (mit „Support“/„Bewerbung“-Buttons) bleibt für die Kunde-Rolle unsichtbar, bis du es
+              unten freischaltest.
+            </p>
+          </div>
+
+          {deployments.map((d) => (
+            <div key={d.id} className="space-y-4 rounded-xl border border-border bg-surface/60 p-4">
+              <p className="font-mono text-xs text-muted">Server {d.guildId}</p>
+
+              <form action={setupTicketPanel.bind(null, d.id)} className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted" htmlFor={`ticketPanelChannelId-${d.id}`}>
+                    Kanal-ID fürs Ticket-Panel
+                  </label>
+                  <input
+                    id={`ticketPanelChannelId-${d.id}`}
+                    name="ticketPanelChannelId"
+                    defaultValue={d.ticketPanelChannelId ?? ""}
+                    inputMode="numeric"
+                    placeholder="Kanal-ID"
+                    className="w-56 rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="rounded-lg border border-border bg-surface-2 px-4 py-2.5 text-xs font-medium text-accent transition hover:bg-surface"
+                >
+                  {d.ticketPanelMessageId ? "Panel aktualisieren" : "Panel einrichten"}
+                </button>
+              </form>
+
+              <form action={updateTicketConfig.bind(null, d.id)} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted" htmlFor={`supportClaimRoleIds-${d.id}`}>
+                    Rollen-IDs, die Support-Tickets claimen dürfen
+                  </label>
+                  <input
+                    id={`supportClaimRoleIds-${d.id}`}
+                    name="supportClaimRoleIds"
+                    defaultValue={d.supportClaimRoleIds ?? ""}
+                    placeholder="mehrere per Komma trennen"
+                    className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-muted" htmlFor={`bewerbungClaimRoleIds-${d.id}`}>
+                    Rollen-IDs, die Bewerbungs-Tickets claimen dürfen
+                  </label>
+                  <input
+                    id={`bewerbungClaimRoleIds-${d.id}`}
+                    name="bewerbungClaimRoleIds"
+                    defaultValue={d.bewerbungClaimRoleIds ?? ""}
+                    placeholder="mehrere per Komma trennen"
+                    className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2"
+                  />
+                </div>
+                <p className="text-xs text-muted sm:col-span-2">
+                  Der Owner kann immer alle Tickets claimen, unabhängig von dieser Liste.
+                </p>
+                <label className="flex items-center gap-2 text-sm sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    name="ticketsVisibleToCustomers"
+                    defaultChecked={d.ticketsVisibleToCustomers}
+                    className="h-4 w-4 rounded border-border accent-accent"
+                  />
+                  Ticket-Panel für die Kunde-Rolle sichtbar machen
+                </label>
+                <div className="sm:col-span-2">
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-black transition hover:brightness-110"
+                  >
+                    Speichern
+                  </button>
+                </div>
+              </form>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="card p-5">
-        <h2 className="text-sm font-semibold">3. Abo-Ablauf jetzt prüfen</h2>
+        <h2 className="text-sm font-semibold">4. Abo-Ablauf jetzt prüfen</h2>
         <p className="mt-1.5 text-sm text-muted">
           Postet für jeden Kunden, dessen Abo abgelaufen ist oder in den
           nächsten 3 Tagen abläuft, eine Erinnerung mit Verlängern-Buttons

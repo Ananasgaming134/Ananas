@@ -65,6 +65,7 @@ export default async function ItemsPage({
   }
   const isFiltered = Boolean(q || kategorie);
   const isSuspended = Boolean(member.borrowSuspendedUntil && member.borrowSuspendedUntil > now);
+  const isPaused = Boolean(member.pausedAt);
 
   // Items werden immer nach Kategorie gruppiert dargestellt - auch bei
   // "Alle Kategorien" - statt alphabetisch quer durcheinander, damit man sich
@@ -225,6 +226,14 @@ export default async function ItemsPage({
                               className="w-full cursor-not-allowed rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
                             >
                               Gesperrt
+                            </button>
+                          ) : isPaused ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="w-full cursor-not-allowed rounded-lg border border-border px-3 py-2 text-sm text-muted"
+                            >
+                              Abo pausiert
                             </button>
                           ) : inCooldown && cooldownEnd ? (
                             <div className="space-y-2">

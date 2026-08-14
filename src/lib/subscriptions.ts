@@ -51,6 +51,75 @@ export async function setSubscriptionPlanCore(
   return { ok: true, plan, newExpiry };
 }
 
+export type PauseActionResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Pausiert das Abo eines Mitglieds (z.B. nach einem Support-Ticket) - waehrend
+ * der Pause bleibt der Status ACTIVE, aber borrowItemCore blockt neue
+ * Ausleihen (siehe src/lib/loans.ts). Die Abrechnung passiert erst beim
+ * Fortsetzen (resumeMemberCore), nicht hier.
+ */
+export async function pauseMemberCore(
+  memberId: string,
+  reason: string,
+  actorId: string,
+  ticketId: string | null
+): Promise<PauseActionResult> {
+  const target = await prisma.member.findUnique({ where: { id: memberId } });
+  if (!target) return { ok: false, error: "Mitglied nicht gefunden." };
+  if (target.pausedAt) return { ok: false, error: "Abo ist bereits pausiert." };
+
+  await prisma.member.update({
+    where: { id: memberId },
+    data: { pausedAt: new Date(), pauseReason: reason, pausedById: actorId, pauseTicketId: ticketId },
+  });
+
+  await logAction({
+    actorId,
+    targetId: memberId,
+    action: "SUBSCRIPTION_PAUSED",
+    details: `Abo pausiert: ${reason}`,
+  });
+
+  return { ok: true };
+}
+
+/**
+ * Beendet eine Abo-Pause und haengt die pausierte Zeit ans bestehende
+ * feePaidUntil dran (Gutschrift statt Bar-Rueckerstattung, siehe Plan) - der
+ * Kunde zahlt effektiv nicht fuer die Pausenzeit, verliert aber auch nichts.
+ */
+export async function resumeMemberCore(memberId: string, actorId: string): Promise<PauseActionResult> {
+  const target = await prisma.member.findUnique({ where: { id: memberId } });
+  if (!target) return { ok: false, error: "Mitglied nicht gefunden." };
+  if (!target.pausedAt) return { ok: false, error: "Abo ist aktuell nicht pausiert." };
+
+  const pausedMs = Date.now() - target.pausedAt.getTime();
+  const newFeePaidUntil = target.feePaidUntil
+    ? new Date(target.feePaidUntil.getTime() + pausedMs)
+    : target.feePaidUntil;
+
+  await prisma.member.update({
+    where: { id: memberId },
+    data: {
+      feePaidUntil: newFeePaidUntil,
+      pausedAt: null,
+      pauseReason: null,
+      pausedById: null,
+      pauseTicketId: null,
+    },
+  });
+
+  await logAction({
+    actorId,
+    targetId: memberId,
+    action: "SUBSCRIPTION_RESUMED",
+    details: `Abo-Pause beendet (${Math.round(pausedMs / (24 * 60 * 60 * 1000))} Tag(e)) - Frist entsprechend verlängert.`,
+  });
+
+  return { ok: true };
+}
+
 /**
  * Findet Kunden, deren Abo abgelaufen ist oder in den naechsten 3 Tagen
  * ablaeuft, und fuer deren AKTUELLE Laufzeit noch keine Erinnerung gepostet

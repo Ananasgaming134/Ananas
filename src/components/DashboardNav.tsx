@@ -14,6 +14,8 @@ type NavItem = {
 const KUNDENBEREICH_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Übersicht" },
   { href: "/dashboard/items", label: "Items" },
+  { href: "/dashboard/abo", label: "Abo" },
+  { href: "/dashboard/tickets", label: "Tickets" },
   { href: "/dashboard/anleitung", label: "Anleitung" },
   { href: "/dashboard/hilfe", label: "Hilfe" },
   { href: "/dashboard/akte", label: "Profil" },
@@ -21,6 +23,8 @@ const KUNDENBEREICH_ITEMS: NavItem[] = [
 
 const VERWALTUNG_ITEMS: NavItem[] = [
   { href: "/dashboard/verwaltung", label: "Übersicht" },
+  { href: "/dashboard/verwaltung/bewerbungen", label: "Bewerbungen", minRole: ROLES.OWNER },
+  { href: "/dashboard/verwaltung/tickets", label: "Tickets" },
   { href: "/dashboard/verwaltung/kunden", label: "Kunden" },
   { href: "/dashboard/verwaltung/mitglieder", label: "Mitglieder-Archiv" },
   { href: "/dashboard/verwaltung/logs", label: "Logs" },
