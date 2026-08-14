@@ -202,15 +202,16 @@ export async function createTicketCategory(
 
 /**
  * Erstellt einen privaten Ticket-Kanal unter der angegebenen Kategorie -
- * sichtbar nur fuer die eroeffnende Person, die uebergebenen Claim-Rollen
- * und (falls per Env konfiguriert) die Owner-Rolle.
+ * standardmaessig NUR sichtbar fuer die eroeffnende Person und die
+ * Owner-Rolle. Claim-Rollen bekommen bewusst KEINEN pauschalen Zugriff mehr
+ * (Warteschlangen-Modell: erst wer claimt, bekommt individuellen Zugriff -
+ * siehe grantChannelMemberAccess und createTicketCore in tickets.ts).
  */
 export async function createTicketChannel(
   guildId: string,
   categoryId: string | null,
   channelName: string,
-  applicantDiscordId: string,
-  claimRoleIds: string[]
+  applicantDiscordId: string
 ): Promise<{ ok: true; channelId: string } | { ok: false; error: string }> {
   if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
 
@@ -218,9 +219,8 @@ export async function createTicketChannel(
   const overwrites: PermissionOverwrite[] = [
     { id: guildId, type: OVERWRITE_TYPE_ROLE, deny: String(PERM_VIEW_CHANNEL) },
     { id: applicantDiscordId, type: OVERWRITE_TYPE_MEMBER, allow: TICKET_ALLOW },
-    ...claimRoleIds.map((roleId) => ({ id: roleId, type: OVERWRITE_TYPE_ROLE, allow: TICKET_ALLOW })),
   ];
-  if (ownerRoleId && !claimRoleIds.includes(ownerRoleId)) {
+  if (ownerRoleId) {
     overwrites.push({ id: ownerRoleId, type: OVERWRITE_TYPE_ROLE, allow: TICKET_ALLOW });
   }
 
@@ -235,6 +235,58 @@ export async function createTicketChannel(
     }),
   });
   if (!res.ok) return { ok: false, error: `Ticket-Kanal konnte nicht erstellt werden (${res.status}).` };
+  const channel = (await res.json()) as { id: string };
+  return { ok: true, channelId: channel.id };
+}
+
+/**
+ * Gibt einer einzelnen Person individuellen Zugriff auf einen Ticket-Kanal -
+ * genutzt beim Claimen (die claimende Aufsichtsperson) und beim
+ * "/ticket add"-Befehl (weitere Personen, nur von Owner/aktuellem Claimer
+ * ausloesbar, siehe route.ts).
+ */
+export async function grantChannelMemberAccess(
+  channelId: string,
+  userId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}/permissions/${userId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ type: OVERWRITE_TYPE_MEMBER, allow: TICKET_ALLOW }),
+  });
+  if (!res.ok && res.status !== 204) return { ok: false, error: `Zugriff konnte nicht vergeben werden (${res.status}).` };
+  return { ok: true };
+}
+
+/**
+ * Legt (falls noch nicht vorhanden) den staff-only Warteschlangen-Kanal an,
+ * in dem pro neuem Ticket eine Nachricht mit Claim-Button erscheint - nur
+ * fuer die konfigurierten Claim-Rollen (beider Kategorien) + Owner sichtbar.
+ */
+export async function ensureTicketQueueChannel(
+  guildId: string,
+  claimRoleIds: string[],
+  name = "ticket-warteschlange"
+): Promise<{ ok: true; channelId: string } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const ownerRoleId = roleIdsFromEnv("DISCORD_ROLE_OWNER")[0];
+  const overwrites: PermissionOverwrite[] = [
+    { id: guildId, type: OVERWRITE_TYPE_ROLE, deny: String(PERM_VIEW_CHANNEL) },
+    ...claimRoleIds.map((roleId) => ({ id: roleId, type: OVERWRITE_TYPE_ROLE, allow: TICKET_ALLOW })),
+  ];
+  if (ownerRoleId && !claimRoleIds.includes(ownerRoleId)) {
+    overwrites.push({ id: ownerRoleId, type: OVERWRITE_TYPE_ROLE, allow: TICKET_ALLOW });
+  }
+
+  const res = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name, type: CHANNEL_TYPE_GUILD_TEXT, permission_overwrites: overwrites }),
+  });
+  if (!res.ok) return { ok: false, error: `Warteschlangen-Kanal konnte nicht erstellt werden (${res.status}).` };
   const channel = (await res.json()) as { id: string };
   return { ok: true, channelId: channel.id };
 }
@@ -416,6 +468,18 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
             type: 1, // SUB_COMMAND
             name: "ticket-panel",
             description: "Postet/aktualisiert das Ticket-Panel (Support/Bewerbung) in diesem Kanal",
+          },
+        ],
+      },
+      {
+        name: "ticket",
+        description: "Ticket-Verwaltung (nur für Aufsicht/Owner)",
+        options: [
+          {
+            type: 1, // SUB_COMMAND
+            name: "add",
+            description: "Fügt eine Person zum aktuellen Ticket-Kanal hinzu (nur Owner/aktueller Claimer)",
+            options: [{ type: 6, name: "user", description: "Wer hinzugefügt werden soll", required: true }], // USER
           },
         ],
       },

@@ -4,9 +4,11 @@ import { prisma } from "@/lib/prisma";
 import {
   addMemberNote,
   banMember,
+  lockMember,
   reinstateAccess,
   revokeAccess,
   setSubscriptionPlan,
+  unlockMember,
   updateMinecraftName,
 } from "@/app/actions/members";
 import RoleBadge from "@/components/RoleBadge";
@@ -68,7 +70,10 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
   const boundReinstate = reinstateAccess.bind(null, target.id);
   const boundSetSubscription = setSubscriptionPlan.bind(null, target.id);
   const boundUpdateMinecraftName = updateMinecraftName.bind(null, target.id);
+  const boundLock = lockMember.bind(null, target.id);
+  const boundUnlock = unlockMember.bind(null, target.id);
   const showManageActions = isAufsichtPlus && !isSelf && canManage(viewer.role, target.role);
+  const showOwnerActions = hasAtLeastRole(viewer.role, ROLES.OWNER) && !isSelf && canManage(viewer.role, target.role);
 
   const currentPlan = getSubscriptionPlan(target.subscriptionPlan);
   const now = new Date();
@@ -170,6 +175,33 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
                   </button>
                 </form>
               )}
+
+              {showOwnerActions &&
+                (target.lockedAt ? (
+                  <form action={boundUnlock}>
+                    <button
+                      type="submit"
+                      className="rounded-lg border border-accent-2/40 bg-accent-2/10 px-3 py-1.5 text-xs font-medium text-accent-2 transition hover:bg-accent-2/20"
+                    >
+                      Abo-Sperre aufheben
+                    </button>
+                  </form>
+                ) : (
+                  <form action={boundLock} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      name="reason"
+                      placeholder="Grund für Sperrung"
+                      className="rounded-lg border border-yellow-500/40 bg-surface px-3 py-1.5 text-xs outline-none ring-yellow-500/40 focus:ring-2"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-1.5 text-xs font-medium text-yellow-500 transition hover:bg-yellow-500/20"
+                    >
+                      ⏳ Abo sperren
+                    </button>
+                  </form>
+                ))}
             </div>
           )}
         </div>
@@ -193,6 +225,13 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
             <span className="font-medium">🚫 Ausleih-Sperre aktiv</span> bis{" "}
             {target.borrowSuspendedUntil?.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
             {target.borrowSuspendedReason ? ` – ${target.borrowSuspendedReason}` : ""}
+          </div>
+        )}
+        {target.lockedAt && (
+          <div className="mt-6 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-500">
+            <span className="font-medium">⏳ Abo gesperrt</span> seit {target.lockedAt.toLocaleDateString("de-DE")}
+            {target.lockReason ? ` – ${target.lockReason}` : ""}. Läuft nur noch bis zum bezahlten Ende, keine
+            weitere Verlängerung möglich.
           </div>
         )}
 
@@ -277,6 +316,11 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
                   style={{ width: `${periodProgressPct}%` }}
                 />
               </div>
+            )}
+            {target.openBalance > 0 && (
+              <p className="mt-2 text-xs text-yellow-500">
+                Noch {formatCoins(target.openBalance)} offen für die aktuelle Verlängerung.
+              </p>
             )}
           </div>
 

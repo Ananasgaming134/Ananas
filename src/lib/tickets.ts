@@ -3,11 +3,19 @@ import { logAction } from "@/lib/audit";
 import {
   createTicketCategory,
   createTicketChannel,
+  ensureTicketQueueChannel,
+  grantChannelMemberAccess,
   revokeChannelSendPermission,
   roleIdsFromEnv,
 } from "@/lib/discord";
 import { TICKET_CLAIM_PREFIX, TICKET_CLOSE_PREFIX } from "@/lib/discordInteractions";
 import type { BotDeployment } from "@prisma/client";
+
+const DISCORD_API = "https://discord.com/api/v10";
+
+function authHeaders() {
+  return { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" };
+}
 
 export const TICKET_CATEGORY = { SUPPORT: "SUPPORT", BEWERBUNG: "BEWERBUNG" } as const;
 export type TicketCategoryValue = (typeof TICKET_CATEGORY)[keyof typeof TICKET_CATEGORY];
@@ -96,17 +104,10 @@ async function provisionTicketChannel(
     }
   }
 
-  const claimRoleIds = claimRoleIdsFor(deployment, ticket.category as TicketCategoryValue);
   const prefix = ticket.category === TICKET_CATEGORY.BEWERBUNG ? "bewerbung" : "ticket";
   const channelName = `${prefix}-${ticket.id.slice(-6)}`;
 
-  const result = await createTicketChannel(
-    deployment.guildId,
-    categoryId,
-    channelName,
-    ticket.applicantDiscordId,
-    claimRoleIds
-  );
+  const result = await createTicketChannel(deployment.guildId, categoryId, channelName, ticket.applicantDiscordId);
   if (!result.ok) return;
 
   await prisma.ticket.update({ where: { id: ticket.id }, data: { discordChannelId: result.channelId } });
@@ -114,25 +115,65 @@ async function provisionTicketChannel(
   let content = buildTicketIntro(ticket.category as TicketCategoryValue, ticket.subject);
   if (initialMessage) content += `\n\n${initialMessage}`;
 
-  await fetch(`https://discord.com/api/v10/channels/${result.channelId}/messages`, {
+  await fetch(`${DISCORD_API}/channels/${result.channelId}/messages`, {
     method: "POST",
-    headers: {
-      Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-      "Content-Type": "application/json",
-    },
+    headers: authHeaders(),
     body: JSON.stringify({
       content,
       components: [
         {
           type: 1,
-          components: [
-            { type: 2, style: 3, label: "🙋 Übernehmen", custom_id: `${TICKET_CLAIM_PREFIX}${ticket.id}` },
-            { type: 2, style: 4, label: "🔒 Schließen", custom_id: `${TICKET_CLOSE_PREFIX}${ticket.id}` },
-          ],
+          components: [{ type: 2, style: 4, label: "🔒 Schließen", custom_id: `${TICKET_CLOSE_PREFIX}${ticket.id}` }],
         },
       ],
     }),
   }).catch(() => {});
+
+  await postToQueue(ticket.id, ticket.category as TicketCategoryValue, ticket.subject, deployment);
+}
+
+/**
+ * Postet die Claim-Nachricht in die Warteschlange (falls konfiguriert bzw.
+ * automatisch anlegbar) - getrennt vom privaten Ticket-Kanal. Erst durchs
+ * Claimen dort bekommt eine einzelne Person individuellen Zugriff auf den
+ * eigentlichen Ticket-Kanal (siehe claimTicketCore).
+ */
+async function postToQueue(
+  ticketId: string,
+  category: TicketCategoryValue,
+  subject: string,
+  deployment: BotDeployment
+): Promise<void> {
+  let queueChannelId = deployment.ticketQueueChannelId;
+  if (!queueChannelId) {
+    const allClaimRoleIds = [
+      ...claimRoleIdsFor(deployment, TICKET_CATEGORY.SUPPORT),
+      ...claimRoleIdsFor(deployment, TICKET_CATEGORY.BEWERBUNG),
+    ];
+    const created = await ensureTicketQueueChannel(deployment.guildId, [...new Set(allClaimRoleIds)]);
+    if (!created.ok) return;
+    queueChannelId = created.channelId;
+    await prisma.botDeployment.update({ where: { id: deployment.id }, data: { ticketQueueChannelId: queueChannelId } });
+  }
+
+  const label = category === TICKET_CATEGORY.BEWERBUNG ? "📝 Bewerbung" : "🎧 Support";
+  const res = await fetch(`${DISCORD_API}/channels/${queueChannelId}/messages`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      content: `${label} — **${subject}**`,
+      components: [
+        {
+          type: 1,
+          components: [{ type: 2, style: 3, label: "🙋 Claimen", custom_id: `${TICKET_CLAIM_PREFIX}${ticketId}` }],
+        },
+      ],
+    }),
+  }).catch(() => null);
+  if (!res || !res.ok) return;
+
+  const message = (await res.json()) as { id: string };
+  await prisma.ticket.update({ where: { id: ticketId }, data: { queueMessageId: message.id } }).catch(() => {});
 }
 
 function buildTicketIntro(category: TicketCategoryValue, subject: string): string {
@@ -157,15 +198,44 @@ export function canManageTicket(
   return memberRoles.some((r) => claimRoleIds.includes(r));
 }
 
+/**
+ * Claimt ein Ticket: nur EINE Person kann das - ein bereits geclaimtes
+ * Ticket ist fuer alle anderen gesperrt (nur Owner/aktueller Claimer koennen
+ * per "/ticket add" weitere Personen hinzufuegen, siehe route.ts). Gibt dem
+ * Claimer individuellen Zugriff auf den privaten Ticket-Kanal und entfernt
+ * den Claim-Button aus der Warteschlangen-Nachricht.
+ */
 export async function claimTicketCore(ticketId: string, actorId: string): Promise<TicketActionResult> {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) return { ok: false, error: "Ticket nicht gefunden." };
   if (ticket.status === TICKET_STATUS.CLOSED) return { ok: false, error: "Ticket ist bereits geschlossen." };
+  if (ticket.status === TICKET_STATUS.CLAIMED) return { ok: false, error: "Ticket wurde bereits von jemand anderem übernommen." };
+
+  const actor = await prisma.member.findUnique({ where: { id: actorId } });
 
   await prisma.ticket.update({
     where: { id: ticketId },
     data: { status: TICKET_STATUS.CLAIMED, claimedById: actorId, claimedAt: new Date() },
   });
+
+  if (ticket.discordChannelId && actor) {
+    await grantChannelMemberAccess(ticket.discordChannelId, actor.discordId).catch(() => {});
+  }
+
+  if (ticket.queueMessageId && ticket.discordGuildId) {
+    const deployment = await prisma.botDeployment.findUnique({ where: { guildId: ticket.discordGuildId } });
+    if (deployment?.ticketQueueChannelId) {
+      await fetch(`${DISCORD_API}/channels/${deployment.ticketQueueChannelId}/messages/${ticket.queueMessageId}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          content: `✅ Übernommen von ${actor?.displayName ?? "jemandem"} — **${ticket.subject}**`,
+          components: [],
+        }),
+      }).catch(() => {});
+    }
+  }
+
   await logAction({ actorId, action: "TICKET_CLAIMED", details: `Ticket "${ticket.subject}" übernommen.` });
   return { ok: true };
 }
@@ -182,6 +252,17 @@ export async function closeTicketCore(ticketId: string, actorId: string): Promis
 
   if (ticket.discordChannelId) {
     await revokeChannelSendPermission(ticket.discordChannelId, ticket.applicantDiscordId).catch(() => {});
+  }
+
+  if (ticket.status !== TICKET_STATUS.CLAIMED && ticket.queueMessageId && ticket.discordGuildId) {
+    const deployment = await prisma.botDeployment.findUnique({ where: { guildId: ticket.discordGuildId } });
+    if (deployment?.ticketQueueChannelId) {
+      await fetch(`${DISCORD_API}/channels/${deployment.ticketQueueChannelId}/messages/${ticket.queueMessageId}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ content: `🔒 Geschlossen — **${ticket.subject}**`, components: [] }),
+      }).catch(() => {});
+    }
   }
 
   await logAction({ actorId, action: "TICKET_CLOSED", details: `Ticket "${ticket.subject}" geschlossen.` });

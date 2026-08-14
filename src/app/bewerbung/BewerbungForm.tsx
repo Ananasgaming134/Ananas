@@ -13,6 +13,9 @@ export default function BewerbungForm({ plans }: { plans: SubscriptionPlan[] }) 
   const [state, formAction, pending] = useActionState(applyForMembership, initialState);
   const [reason, setReason] = useState("");
   const [declaredNetWorth, setDeclaredNetWorth] = useState("");
+  const [minecraftName, setMinecraftName] = useState("");
+  const [age, setAge] = useState("");
+  const [playHours, setPlayHours] = useState("");
   const [planId, setPlanId] = useState(plans[0]?.id ?? "");
   const [items, setItems] = useState<DeclaredItem[]>([]);
 
@@ -71,6 +74,52 @@ export default function BewerbungForm({ plans }: { plans: SubscriptionPlan[] }) 
           onChange={(e) => setReason(e.target.value)}
           className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2"
         />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted" htmlFor="minecraftName">
+            Minecraft-Name *
+          </label>
+          <input
+            id="minecraftName"
+            name="minecraftName"
+            required
+            value={minecraftName}
+            onChange={(e) => setMinecraftName(e.target.value)}
+            className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted" htmlFor="age">
+            Alter *
+          </label>
+          <input
+            id="age"
+            name="age"
+            type="number"
+            min={0}
+            required
+            value={age}
+            onChange={(e) => setAge(e.target.value)}
+            className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted" htmlFor="playHours">
+            Spielstunden *
+          </label>
+          <input
+            id="playHours"
+            name="playHours"
+            type="number"
+            min={0}
+            required
+            value={playHours}
+            onChange={(e) => setPlayHours(e.target.value)}
+            className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2"
+          />
+        </div>
       </div>
 
       <div>

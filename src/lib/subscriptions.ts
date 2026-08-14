@@ -1,7 +1,8 @@
+import type { Member } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { DISCORD_BOT_TOKEN, DISCORD_SUBSCRIPTION_CHANNEL_ID } from "@/lib/discord";
-import { formatCoins, getSubscriptionPlan, SUBSCRIPTION_PLANS, type SubscriptionPlan } from "@/lib/constants";
+import { DISCORD_BOT_TOKEN, DISCORD_SUBSCRIPTION_CHANNEL_ID, sendDiscordDirectMessage } from "@/lib/discord";
+import { formatCoins, getSubscriptionPlan, SITE_NAME, SUBSCRIPTION_PLANS, type SubscriptionPlan } from "@/lib/constants";
 
 export const RENEW_PREFIX = "leihcenter_renew:";
 
@@ -22,6 +23,9 @@ export async function setSubscriptionPlanCore(
 ): Promise<SetSubscriptionResult> {
   const target = await prisma.member.findUnique({ where: { id: memberId } });
   if (!target) return { ok: false, error: "Mitglied nicht gefunden." };
+  if (target.lockedAt) {
+    return { ok: false, error: "Abo ist gesperrt - keine Verlängerung möglich (läuft nur bis zum bezahlten Ende aus)." };
+  }
 
   const plan = getSubscriptionPlan(planId);
   if (!plan) return { ok: false, error: "Unbekannter Abo-Plan." };
@@ -38,6 +42,7 @@ export async function setSubscriptionPlanCore(
       monthlyFee: plan.price,
       feePaidUntil: newExpiry,
       subscriptionReminderSentAt: null,
+      openBalance: 0,
     },
   });
 
@@ -52,6 +57,68 @@ export async function setSubscriptionPlanCore(
 }
 
 export type PauseActionResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * "Sperren" (nur Owner, siehe UI-Gate): anders als Bann/Freigabe-Entzug KEIN
+ * sofortiger Ausschluss - das Abo laeuft nur noch bis zum bereits bezahlten
+ * feePaidUntil aus, danach keine weitere Verlaengerung mehr moeglich
+ * (setSubscriptionPlanCore lehnt das oben ab). Verschickt sofort die
+ * Dauerauftrag-Warnung per DM und haelt den Zeitpunkt fest
+ * (lockNoticeSentAt), damit isRefundEligible() spaeter die 24h-Regel
+ * anwenden kann.
+ */
+export async function lockMemberCore(memberId: string, reason: string, actorId: string): Promise<PauseActionResult> {
+  const target = await prisma.member.findUnique({ where: { id: memberId } });
+  if (!target) return { ok: false, error: "Mitglied nicht gefunden." };
+  if (target.lockedAt) return { ok: false, error: "Abo ist bereits gesperrt." };
+
+  const now = new Date();
+  await prisma.member.update({
+    where: { id: memberId },
+    data: { lockedAt: now, lockReason: reason, lockedById: actorId, lockNoticeSentAt: now },
+  });
+
+  const expiryLine = target.feePaidUntil
+    ? `Dein aktuelles Abo läuft noch bis ${target.feePaidUntil.toLocaleDateString("de-DE")} und wird danach NICHT mehr verlängert.`
+    : "Dein Abo wird nicht mehr verlängert.";
+
+  await sendDiscordDirectMessage(target.discordId, {
+    content:
+      `⚠️ **${SITE_NAME} — Abo gesperrt**\nGrund: ${reason}\n\n${expiryLine}\n\n` +
+      "Falls du einen Dauerauftrag für die Abo-Zahlung eingerichtet hast, brich ihn bitte ab. " +
+      "Eine danach trotzdem eingehende Zahlung wird sonst als Spende gewertet und nicht erstattet.",
+  }).catch(() => {});
+
+  await logAction({ actorId, targetId: memberId, action: "SUBSCRIPTION_LOCKED", details: `Abo gesperrt: ${reason}` });
+  return { ok: true };
+}
+
+export async function unlockMemberCore(memberId: string, actorId: string): Promise<PauseActionResult> {
+  const target = await prisma.member.findUnique({ where: { id: memberId } });
+  if (!target) return { ok: false, error: "Mitglied nicht gefunden." };
+  if (!target.lockedAt) return { ok: false, error: "Abo ist aktuell nicht gesperrt." };
+
+  await prisma.member.update({
+    where: { id: memberId },
+    data: { lockedAt: null, lockReason: null, lockedById: null, lockNoticeSentAt: null },
+  });
+
+  await logAction({ actorId, targetId: memberId, action: "SUBSCRIPTION_UNLOCKED", details: "Abo-Sperre aufgehoben." });
+  return { ok: true };
+}
+
+/**
+ * 24h-Regel: wurde die Dauerauftrag-Warnung WENIGER als 24h vor dem
+ * bezahlten Laufzeitende verschickt (oder erst danach), hatte die Person
+ * nicht genug Vorlauf - eine trotzdem eingehende Zahlung muss dann erstattet
+ * werden. Bei >=24h Vorlauf gilt sie als Spende (keine Erstattung faellig).
+ */
+export function isRefundEligible(member: Pick<Member, "lockNoticeSentAt" | "feePaidUntil">): boolean {
+  if (!member.lockNoticeSentAt) return false;
+  if (!member.feePaidUntil) return true;
+  const noticeLeadMs = member.feePaidUntil.getTime() - member.lockNoticeSentAt.getTime();
+  return noticeLeadMs < 24 * 60 * 60 * 1000;
+}
 
 /**
  * Pausiert das Abo eines Mitglieds (z.B. nach einem Support-Ticket) - waehrend

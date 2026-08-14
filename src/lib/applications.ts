@@ -21,6 +21,9 @@ export type CreateApplicationInput = {
   declaredNetWorth: number;
   requestedPlanId: string;
   source: "WEB" | "DISCORD";
+  minecraftName: string;
+  age: number;
+  playHours: number;
   items?: ApplicationItemInput[];
 };
 
@@ -58,6 +61,9 @@ export async function createApplicationCore(input: CreateApplicationInput): Prom
       declaredNetWorth: input.declaredNetWorth,
       requestedPlanId: input.requestedPlanId,
       source: input.source,
+      minecraftName: input.minecraftName,
+      age: input.age,
+      playHours: input.playHours,
       items:
         input.items && input.items.length > 0
           ? {
@@ -136,6 +142,10 @@ export async function approveApplicationCore(
           status: MEMBER_STATUS.ACTIVE,
           subscriptionPlan: plan.id,
           monthlyFee: plan.price,
+          openBalance: plan.price,
+          minecraftName: application.minecraftName,
+          age: application.age,
+          playHours: application.playHours,
           revokedAt: null,
           revokedReason: null,
         },
@@ -146,9 +156,12 @@ export async function approveApplicationCore(
           username: application.username,
           displayName: application.displayName,
           avatarUrl: application.avatarUrl,
-          minecraftName: "",
+          minecraftName: application.minecraftName,
+          age: application.age,
+          playHours: application.playHours,
           role: ROLES.KUNDE,
           status: MEMBER_STATUS.ACTIVE,
+          openBalance: plan.price,
           subscriptionPlan: plan.id,
           monthlyFee: plan.price,
           customerNumber: await generateCustomerNumber(),

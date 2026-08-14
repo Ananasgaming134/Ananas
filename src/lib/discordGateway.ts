@@ -1,6 +1,8 @@
-import { Client, GatewayIntentBits } from "discord.js";
+import { Client, GatewayIntentBits, type GuildMember, type PartialGuildMember } from "discord.js";
 import { WORTKETTEN_CHANNEL_ID } from "@/lib/constants";
 import { processWordChainAttempt } from "@/lib/wordChain";
+import { roleIdsFromEnv } from "@/lib/discord";
+import { ensureMemberFromDiscordUser } from "@/lib/discordInteractions";
 
 const globalForGateway = globalThis as unknown as { discordGatewayClient?: Client };
 
@@ -35,13 +37,43 @@ async function handleMessage(message: {
 }
 
 /**
- * Startet die dauerhafte Gateway-Verbindung fuer das Wortkettenspiel (wird
- * einmal aus src/instrumentation.ts beim Serverstart aufgerufen). Braucht das
- * privilegierte "Message Content Intent" im Discord Developer Portal (Bot ->
- * Privileged Gateway Intents) - ohne das laesst Discord die Verbindung mit
+ * Sobald jemand die konfigurierte Kunde-Rolle neu bekommt, wird sofort ein
+ * Member-Datensatz angelegt (idempotent - ensureMemberFromDiscordUser legt
+ * nur an, falls noch keiner existiert, z.B. weil die Bewerbung schon einen
+ * angelegt hat). Deckt den Fall ab, dass die Rolle manuell in Discord
+ * vergeben wird, ohne den Bewerbungsprozess zu durchlaufen.
+ */
+async function handleMemberRoleUpdate(oldMember: GuildMember | PartialGuildMember, newMember: GuildMember) {
+  const kundeRoleIds = roleIdsFromEnv("DISCORD_ROLE_KUNDE");
+  if (kundeRoleIds.length === 0) return;
+
+  const hadRole = oldMember.roles?.cache.some((r) => kundeRoleIds.includes(r.id)) ?? false;
+  const hasRole = newMember.roles.cache.some((r) => kundeRoleIds.includes(r.id));
+  if (hadRole || !hasRole) return;
+
+  try {
+    await ensureMemberFromDiscordUser({
+      id: newMember.user.id,
+      username: newMember.user.username,
+      global_name: newMember.user.globalName,
+      avatar: newMember.user.avatar,
+    });
+    console.log(`[gateway] Member fuer ${newMember.user.username} (${newMember.user.id}) per Rollenvergabe sichergestellt.`);
+  } catch (err) {
+    console.error("[gateway] Konnte Member bei Rollenvergabe nicht anlegen:", err);
+  }
+}
+
+/**
+ * Startet die dauerhafte Gateway-Verbindung (wird einmal aus
+ * src/instrumentation.ts beim Serverstart aufgerufen) - urspruenglich nur
+ * fuers Wortkettenspiel, jetzt zusaetzlich fuer die sofortige
+ * Member-Anlage bei Kunde-Rollenvergabe. Braucht die privilegierten Intents
+ * "Message Content" UND "Server Members" im Discord Developer Portal (Bot ->
+ * Privileged Gateway Intents) - ohne die laesst Discord die Verbindung mit
  * disallowed-intents-Fehler nicht zu. Ein Verbindungsfehler wird nur geloggt
- * und darf die Next.js-App nicht zum Absturz bringen, da das Wortkettenspiel
- * nur ein Zusatzfeature ist - Ausleihe, Cron usw. muessen unabhaengig davon
+ * und darf die Next.js-App nicht zum Absturz bringen, da beide Features nur
+ * Zusatzfunktionen sind - Ausleihe, Cron usw. muessen unabhaengig davon
  * weiterlaufen.
  */
 export function startDiscordGateway() {
@@ -49,33 +81,42 @@ export function startDiscordGateway() {
 
   const token = process.env.DISCORD_BOT_TOKEN;
   if (!token) {
-    console.warn("[wortkette] Kein DISCORD_BOT_TOKEN gesetzt - Gateway wird nicht gestartet.");
-    return null;
-  }
-  if (!WORTKETTEN_CHANNEL_ID) {
-    console.warn("[wortkette] Kein DISCORD_WORTKETTEN_CHANNEL_ID gesetzt - Gateway wird nicht gestartet.");
+    console.warn("[gateway] Kein DISCORD_BOT_TOKEN gesetzt - Gateway wird nicht gestartet.");
     return null;
   }
 
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildMembers,
+    ],
   });
 
   client.once("ready", () => {
-    console.log(`[wortkette] Discord-Gateway verbunden als ${client.user?.tag}.`);
+    console.log(`[gateway] Discord-Gateway verbunden als ${client.user?.tag}.`);
   });
 
   client.on("error", (err) => {
-    console.error("[wortkette] Gateway-Fehler:", err);
+    console.error("[gateway] Gateway-Fehler:", err);
   });
 
-  client.on("messageCreate", (message) => {
-    void handleMessage(message);
+  if (WORTKETTEN_CHANNEL_ID) {
+    client.on("messageCreate", (message) => {
+      void handleMessage(message);
+    });
+  } else {
+    console.warn("[wortkette] Kein DISCORD_WORTKETTEN_CHANNEL_ID gesetzt - Wortkettenspiel deaktiviert.");
+  }
+
+  client.on("guildMemberUpdate", (oldMember, newMember) => {
+    void handleMemberRoleUpdate(oldMember, newMember);
   });
 
   client.login(token).catch((err) => {
     console.error(
-      "[wortkette] Gateway-Login fehlgeschlagen (vermutlich fehlt das 'Message Content Intent' im " +
+      "[gateway] Gateway-Login fehlgeschlagen (vermutlich fehlt ein privilegierter Intent im " +
         "Discord Developer Portal unter Bot -> Privileged Gateway Intents):",
       err
     );

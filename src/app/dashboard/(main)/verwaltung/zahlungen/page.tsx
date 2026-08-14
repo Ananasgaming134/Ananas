@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { applyPaymentToPlan, checkPayments, ignorePayment } from "@/app/actions/payments";
+import { isRefundEligible } from "@/lib/subscriptions";
 import { ROLES, SUBSCRIPTION_PLANS } from "@/lib/constants";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -71,9 +72,18 @@ export default async function ZahlungenPage() {
                 <td className="px-4 py-3 text-muted">{payment.reason ?? "-"}</td>
                 <td className="px-4 py-3">
                   {payment.member ? (
-                    <Link href={`/dashboard/akte/${payment.member.id}`} className="hover:underline">
-                      {payment.member.displayName}
-                    </Link>
+                    <div>
+                      <Link href={`/dashboard/akte/${payment.member.id}`} className="hover:underline">
+                        {payment.member.displayName}
+                      </Link>
+                      {payment.member.lockedAt && (
+                        <p className={`mt-0.5 text-[11px] ${isRefundEligible(payment.member) ? "text-danger" : "text-muted"}`}>
+                          {isRefundEligible(payment.member)
+                            ? "⚠️ Abo gesperrt, zu kurzfristig gewarnt — Rückerstattung fällig"
+                            : "Abo gesperrt — zählt als Spende, keine Rückerstattung"}
+                        </p>
+                      )}
+                    </div>
                   ) : (
                     <span className="text-xs text-yellow-500">kein Mitglied gefunden</span>
                   )}

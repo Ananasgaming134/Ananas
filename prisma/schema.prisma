@@ -58,10 +58,30 @@ model Member {
   pausedById     String?
   pauseTicketId  String?
 
+  // Aus der Bewerbung uebernommen (siehe MembershipApplication).
+  age            Int?
+  playHours      Int?
+
+  // Offener Restbetrag der aktuellen Verlaengerung, in $ (1 ₵ = 1 $) - siehe
+  // applyPaymentToPlan in src/app/actions/payments.ts. Erst wenn 0 erreicht
+  // ist, wird feePaidUntil tatsaechlich verlaengert.
+  openBalance    Int      @default(0)
+
+  // "Sperren" (Owner) = Abo laeuft nur noch bis feePaidUntil aus, keine
+  // weitere Verlaengerung moeglich - anders als BANNED/REVOKED (sofortiger
+  // Ausschluss). lockNoticeSentAt haelt fest, wann die Dauerauftrag-Warnung
+  // verschickt wurde (fuer die 24h-Regel, siehe isRefundEligible in
+  // src/lib/subscriptions.ts).
+  lockedAt         DateTime?
+  lockReason       String?
+  lockedById       String?
+  lockNoticeSentAt DateTime?
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   loans          Loan[]
+  planChangeRequests PlanChangeRequest[]
   notesAbout     MemberNote[] @relation("NotesAboutMember")
   notesAuthored  MemberNote[] @relation("NotesByAuthor")
   auditAsActor   AuditLog[]   @relation("AuditActor")
@@ -244,6 +264,9 @@ model BotDeployment {
   ticketsVisibleToCustomers Boolean   @default(false)
   supportClaimRoleIds       String?
   bewerbungClaimRoleIds     String?
+  // Staff-only Kanal mit einer Claim-Button-Nachricht pro neuem Ticket -
+  // getrennt vom privaten Ticket-Kanal selbst (siehe Ticket.queueMessageId).
+  ticketQueueChannelId      String?
 
   active          Boolean   @default(true)
   createdById     String?
@@ -266,6 +289,11 @@ model MembershipApplication {
   declaredNetWorth Int
   requestedPlanId  String
   source           String   // WEB | DISCORD
+
+  // Werden bei Annahme auf den Member uebernommen (siehe approveApplicationCore).
+  minecraftName    String
+  age              Int
+  playHours        Int
 
   status           String   @default("PENDING") // PENDING | APPROVED | REJECTED
   rejectionReason  String?
@@ -327,8 +355,30 @@ model Ticket {
   closedById         String?
   closedAt           DateTime?
 
+  // Nachricht in der Claim-Warteschlange (BotDeployment.ticketQueueChannelId)
+  // - wird beim Claim/Close editiert (Button entfernt, "von X uebernommen").
+  queueMessageId     String?
+
   createdAt          DateTime  @default(now())
 
   @@index([status])
   @@index([memberId])
+}
+
+// Kunde beantragt ein anderes Abo-Paket - muss vom Owner genehmigt werden
+// (siehe requestPlanChangeCore/approvePlanChangeCore). Genehmigung aendert
+// nur subscriptionPlan/monthlyFee fuer die naechste Verlaengerung, die
+// aktuelle Laufzeit (feePaidUntil) bleibt unangetastet.
+model PlanChangeRequest {
+  id              String    @id @default(cuid())
+  memberId        String
+  member          Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  requestedPlanId String
+  status          String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  reviewedById    String?
+  reviewedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([memberId])
+  @@index([status])
 }

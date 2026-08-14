@@ -66,6 +66,7 @@ export default async function ItemsPage({
   const isFiltered = Boolean(q || kategorie);
   const isSuspended = Boolean(member.borrowSuspendedUntil && member.borrowSuspendedUntil > now);
   const isPaused = Boolean(member.pausedAt);
+  const hasNoActiveSubscription = !member.pausedAt && (!member.feePaidUntil || member.feePaidUntil < now);
 
   // Items werden immer nach Kategorie gruppiert dargestellt - auch bei
   // "Alle Kategorien" - statt alphabetisch quer durcheinander, damit man sich
@@ -235,6 +236,13 @@ export default async function ItemsPage({
                             >
                               Abo pausiert
                             </button>
+                          ) : hasNoActiveSubscription ? (
+                            <a
+                              href="/dashboard/abo"
+                              className="block w-full rounded-lg border border-border px-3 py-2 text-center text-sm text-muted transition hover:bg-surface-2"
+                            >
+                              Kein aktives Abo
+                            </a>
                           ) : inCooldown && cooldownEnd ? (
                             <div className="space-y-2">
                               <p className="text-center text-xs text-muted">

@@ -5,7 +5,7 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { canManage, MEMBER_STATUS, ROLES } from "@/lib/constants";
-import { pauseMemberCore, resumeMemberCore, setSubscriptionPlanCore } from "@/lib/subscriptions";
+import { lockMemberCore, pauseMemberCore, resumeMemberCore, setSubscriptionPlanCore, unlockMemberCore } from "@/lib/subscriptions";
 
 function refreshMemberPages(memberId: string) {
   revalidatePath(`/dashboard/akte/${memberId}`);
@@ -79,6 +79,20 @@ export async function resumeMember(memberId: string) {
   if (!target || !canManage(actor.role, target.role)) return;
 
   await resumeMemberCore(memberId, actor.id);
+  refreshMemberPages(memberId);
+}
+
+/** "Abo sperren" - nur Owner (siehe Plan): kein sofortiger Ausschluss, laeuft nur nicht mehr weiter. */
+export async function lockMember(memberId: string, formData: FormData) {
+  const actor = await requireMember(ROLES.OWNER);
+  const reason = String(formData.get("reason") ?? "").trim() || "Kein Grund angegeben.";
+  await lockMemberCore(memberId, reason, actor.id);
+  refreshMemberPages(memberId);
+}
+
+export async function unlockMember(memberId: string) {
+  const actor = await requireMember(ROLES.OWNER);
+  await unlockMemberCore(memberId, actor.id);
   refreshMemberPages(memberId);
 }
 

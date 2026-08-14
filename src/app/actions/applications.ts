@@ -33,9 +33,19 @@ export async function applyForMembership(_prevState: ApplyFormState, formData: F
   const reason = String(formData.get("reason") ?? "").trim();
   const declaredNetWorth = parseInt(String(formData.get("declaredNetWorth") ?? ""), 10);
   const requestedPlanId = String(formData.get("requestedPlanId") ?? "");
+  const minecraftName = String(formData.get("minecraftName") ?? "").trim();
+  const age = parseInt(String(formData.get("age") ?? ""), 10);
+  const playHours = parseInt(String(formData.get("playHours") ?? ""), 10);
   const itemsRaw = String(formData.get("items") ?? "[]");
 
-  if (!reason || !Number.isFinite(declaredNetWorth) || !requestedPlanId) {
+  if (
+    !reason ||
+    !Number.isFinite(declaredNetWorth) ||
+    !requestedPlanId ||
+    !minecraftName ||
+    !Number.isFinite(age) ||
+    !Number.isFinite(playHours)
+  ) {
     return { ok: false, error: "Bitte alle Pflichtfelder ausfüllen." };
   }
 
@@ -65,6 +75,9 @@ export async function applyForMembership(_prevState: ApplyFormState, formData: F
     declaredNetWorth,
     requestedPlanId,
     source: "WEB",
+    minecraftName,
+    age,
+    playHours,
     items,
   });
 

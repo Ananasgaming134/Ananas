@@ -56,6 +56,10 @@ export async function borrowItemCore(
     return { ok: false, error: "Dein Abo ist aktuell pausiert - solange kannst du nichts ausleihen." };
   }
 
+  if (!member.feePaidUntil || member.feePaidUntil < now) {
+    return { ok: false, error: "Du brauchst ein aktives, bezahltes Abo, um etwas auszuleihen." };
+  }
+
   const [activeLoansForItem, alreadyBorrowed, lastReturnOfItem] = await Promise.all([
     prisma.loan.count({ where: { itemId, status: LOAN_STATUS.ACTIVE } }),
     prisma.loan.findFirst({ where: { itemId, memberId, status: LOAN_STATUS.ACTIVE } }),

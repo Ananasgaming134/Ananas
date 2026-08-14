@@ -10,6 +10,7 @@ import {
 } from "@/lib/discordPanel";
 import { RENEW_PREFIX, setSubscriptionPlanCore } from "@/lib/subscriptions";
 import { applyAndOpenTicketCore } from "@/lib/applications";
+import { grantChannelMemberAccess } from "@/lib/discord";
 import {
   TICKET_CATEGORY,
   canManageTicket,
@@ -127,6 +128,10 @@ async function handleCommand(interaction: DiscordInteractionPayload) {
 
   if (commandName === "abo") {
     return handleAboCommand(interaction, invokerRoles);
+  }
+
+  if (commandName === "ticket") {
+    return handleTicketAddCommand(interaction, invokerRoles);
   }
 
   if (commandName !== "akte") {
@@ -457,12 +462,37 @@ function respondWithBewerbungModal(planId: string) {
           components: [
             {
               type: 4,
-              custom_id: "items",
-              style: 2,
-              label: "Items als Nachweis (optional, frei)",
-              placeholder: "z.B. 2x Diamantschwert ~500000, 1x Elytra ~2000000",
-              max_length: 500,
-              required: false,
+              custom_id: "minecraftName",
+              style: 1,
+              label: "Dein Minecraft-Name",
+              max_length: 32,
+              required: true,
+            },
+          ],
+        },
+        {
+          type: 1,
+          components: [
+            {
+              type: 4,
+              custom_id: "age",
+              style: 1,
+              label: "Dein Alter (Zahl)",
+              max_length: 3,
+              required: true,
+            },
+          ],
+        },
+        {
+          type: 1,
+          components: [
+            {
+              type: 4,
+              custom_id: "playHours",
+              style: 1,
+              label: "Deine Spielstunden auf dem Server (Zahl)",
+              max_length: 10,
+              required: true,
             },
           ],
         },
@@ -501,10 +531,20 @@ async function handleModalSubmit(interaction: DiscordInteractionPayload) {
     const reason = getModalValue(interaction, "reason");
     const netWorthRaw = getModalValue(interaction, "netWorth");
     const declaredNetWorth = parseInt(netWorthRaw.replace(/[^\d]/g, ""), 10);
-    const itemsText = getModalValue(interaction, "items");
+    const minecraftName = getModalValue(interaction, "minecraftName").trim();
+    const ageRaw = getModalValue(interaction, "age");
+    const age = parseInt(ageRaw.replace(/[^\d]/g, ""), 10);
+    const playHoursRaw = getModalValue(interaction, "playHours");
+    const playHours = parseInt(playHoursRaw.replace(/[^\d]/g, ""), 10);
 
-    if (!reason || !Number.isFinite(declaredNetWorth)) {
-      return ephemeral("❌ Bitte Grund und ein gültiges Gesamtvermögen angeben.");
+    if (
+      !reason ||
+      !Number.isFinite(declaredNetWorth) ||
+      !minecraftName ||
+      !Number.isFinite(age) ||
+      !Number.isFinite(playHours)
+    ) {
+      return ephemeral("❌ Bitte alle Felder gültig ausfüllen.");
     }
 
     const result = await applyAndOpenTicketCore({
@@ -518,7 +558,9 @@ async function handleModalSubmit(interaction: DiscordInteractionPayload) {
       declaredNetWorth,
       requestedPlanId: planId,
       source: "DISCORD",
-      items: itemsText ? [{ name: itemsText.slice(0, 500), declaredPrice: 0, quantity: 1 }] : undefined,
+      minecraftName,
+      age,
+      playHours,
     });
 
     return ephemeral(
@@ -632,6 +674,44 @@ async function handleAboCommand(interaction: DiscordInteractionPayload, invokerR
   );
 }
 
+/**
+ * "/ticket add <user>" - nur innerhalb eines Ticket-Kanals nutzbar. Nur der
+ * Owner oder die Person, die das Ticket geclaimt hat, darf weitere Leute
+ * hinzufuegen (siehe Plan: Warteschlangen-Modell mit Einzel-Claim-Zugriff).
+ */
+async function handleTicketAddCommand(interaction: DiscordInteractionPayload, invokerRoles: string[]) {
+  const channelId = interaction.channel_id;
+  if (!channelId) return ephemeral("Nur innerhalb eines Ticket-Kanals nutzbar.");
+
+  const ticket = await prisma.ticket.findFirst({ where: { discordChannelId: channelId } });
+  if (!ticket) return ephemeral("Das ist kein Ticket-Kanal.");
+
+  const discordUser = interaction.member?.user ?? interaction.user;
+  const actor = discordUser ? await prisma.member.findUnique({ where: { discordId: discordUser.id } }) : null;
+
+  const isOwner = hasOwnerRole(invokerRoles);
+  const isClaimer = Boolean(actor && ticket.claimedById === actor.id);
+  if (!isOwner && !isClaimer) {
+    return ephemeral("Nur der Owner oder wer das Ticket übernommen hat, kann Leute hinzufügen.");
+  }
+
+  const subcommand = interaction.data?.options?.[0];
+  const targetDiscordId = subcommand?.options?.find((o) => o.name === "user")?.value;
+  if (!targetDiscordId) return ephemeral("Bitte eine Person angeben.");
+  if (!ticket.discordChannelId) return ephemeral("Für dieses Ticket existiert kein Discord-Kanal.");
+
+  const result = await grantChannelMemberAccess(ticket.discordChannelId, targetDiscordId);
+  if (!result.ok) return ephemeral(`❌ ${result.error}`);
+
+  await logAction({
+    actorId: actor?.id ?? null,
+    action: "TICKET_MEMBER_ADDED",
+    details: `Discord-ID ${targetDiscordId} zu Ticket "${ticket.subject}" hinzugefügt.`,
+  });
+
+  return ephemeral(`✅ <@${targetDiscordId}> wurde zum Ticket hinzugefügt.`);
+}
+
 async function checkBorrowPermission(guildId: string | undefined, memberRoles: string[]) {
   if (!guildId) return { ok: false as const, error: "Nur innerhalb eines Servers nutzbar." };
   const deployment = await prisma.botDeployment.findUnique({ where: { guildId } });
@@ -694,16 +774,34 @@ async function respondWithItemActions(
       ? `Verfügbar: ${available}/${item.quantityTotal}`
       : "Aktuell nicht verfügbar.";
 
+  const description = `${status}${permission.ok ? "" : `\n\n⚠️ ${permission.error}`}`;
+  const imageUrl = absoluteSiteUrl(item.imageUrl);
+
   return Response.json({
     type: updateInPlace ? InteractionResponseType.UPDATE_MESSAGE : InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
     data: {
-      content: `**${item.name}**\n${status}${
-        permission.ok ? "" : `\n\n⚠️ ${permission.error}`
-      }`,
+      content: "",
+      embeds: [
+        {
+          title: item.name,
+          description,
+          color: 0xf2b544,
+          ...(imageUrl ? { image: { url: imageUrl } } : {}),
+        },
+      ],
       flags: EPHEMERAL,
       components: permission.ok ? components : [],
     },
   });
+}
+
+/** Baut aus einem relativen Bildpfad (z.B. "/api/uploads/xxx.png") eine fuer Discord-Embeds noetige absolute URL. */
+function absoluteSiteUrl(path: string | null): string | null {
+  if (!path) return null;
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  const base = process.env.NEXTAUTH_URL;
+  if (!base) return null;
+  return `${base.replace(/\/$/, "")}${path}`;
 }
 
 async function handleBorrow(

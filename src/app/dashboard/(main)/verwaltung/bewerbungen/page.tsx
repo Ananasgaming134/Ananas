@@ -1,18 +1,24 @@
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { approveApplication, blockApplicant, rejectApplication, unblockApplicant } from "@/app/actions/applications";
+import { approvePlanChange, rejectPlanChange } from "@/app/actions/planChanges";
 import { ROLES, SUBSCRIPTION_PLANS, formatCoins } from "@/lib/constants";
 
 export default async function BewerbungenPage() {
   await requireMember(ROLES.OWNER);
 
-  const [pending, blocks] = await Promise.all([
+  const [pending, blocks, planChangeRequests] = await Promise.all([
     prisma.membershipApplication.findMany({
       where: { status: "PENDING" },
       include: { items: true },
       orderBy: { createdAt: "asc" },
     }),
     prisma.applicationBlock.findMany({ orderBy: { blockedAt: "desc" } }),
+    prisma.planChangeRequest.findMany({
+      where: { status: "PENDING" },
+      include: { member: true },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
 
   const ticketIds = pending.map((a) => a.ticketId).filter((id): id is string => Boolean(id));
@@ -54,9 +60,20 @@ export default async function BewerbungenPage() {
 
                 <p className="text-sm">{app.reason}</p>
 
-                <p className="text-sm text-muted">
-                  Angegebenes Gesamtvermögen: <span className="text-foreground">{formatCoins(app.declaredNetWorth)}</span>
-                </p>
+                <div className="grid grid-cols-2 gap-3 text-sm text-muted sm:grid-cols-4">
+                  <p>
+                    Minecraft: <span className="text-foreground">{app.minecraftName}</span>
+                  </p>
+                  <p>
+                    Alter: <span className="text-foreground">{app.age}</span>
+                  </p>
+                  <p>
+                    Spielstunden: <span className="text-foreground">{app.playHours}</span>
+                  </p>
+                  <p>
+                    Vermögen: <span className="text-foreground">{formatCoins(app.declaredNetWorth)}</span>
+                  </p>
+                </div>
 
                 {app.items.length > 0 && (
                   <div className="rounded-lg border border-border bg-surface/60 p-3">
@@ -129,6 +146,49 @@ export default async function BewerbungenPage() {
           })}
         </div>
       )}
+
+      <div>
+        <h2 className="mb-3 text-sm font-semibold">Paketwechsel-Anfragen</h2>
+        {planChangeRequests.length === 0 ? (
+          <p className="text-sm text-muted">Keine offenen Anfragen.</p>
+        ) : (
+          <div className="card divide-y divide-border overflow-hidden">
+            {planChangeRequests.map((req) => {
+              const plan = SUBSCRIPTION_PLANS.find((p) => p.id === req.requestedPlanId);
+              const currentPlan = SUBSCRIPTION_PLANS.find((p) => p.id === req.member.subscriptionPlan);
+              return (
+                <div key={req.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                  <div>
+                    <p className="font-medium">{req.member.displayName}</p>
+                    <p className="text-xs text-muted">
+                      {currentPlan?.label ?? "kein Paket"} → <span className="text-foreground">{plan?.label ?? req.requestedPlanId}</span>{" "}
+                      &middot; {req.createdAt.toLocaleDateString("de-DE")}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <form action={approvePlanChange.bind(null, req.id)}>
+                      <button
+                        type="submit"
+                        className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-black transition hover:brightness-110"
+                      >
+                        Genehmigen
+                      </button>
+                    </form>
+                    <form action={rejectPlanChange.bind(null, req.id)}>
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-surface-2"
+                      >
+                        Ablehnen
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <div>
         <h2 className="mb-3 text-sm font-semibold">Rote Liste</h2>

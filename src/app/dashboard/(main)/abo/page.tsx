@@ -1,9 +1,14 @@
 import Link from "next/link";
 import { requireMember } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
+import { requestPlanChange } from "@/app/actions/planChanges";
 import { SUBSCRIPTION_PLANS, formatCoins } from "@/lib/constants";
 
 export default async function AboPage() {
   const member = await requireMember();
+  const pendingChange = await prisma.planChangeRequest.findFirst({
+    where: { memberId: member.id, status: "PENDING" },
+  });
 
   return (
     <div className="space-y-6">
@@ -72,6 +77,47 @@ export default async function AboPage() {
           .
         </p>
       </div>
+
+      {member.subscriptionPlan && (
+        <div className="card space-y-3 p-5">
+          <h2 className="text-sm font-semibold">Paket wechseln</h2>
+          {pendingChange ? (
+            <p className="text-sm text-muted">
+              Anfrage auf{" "}
+              <span className="text-foreground">
+                {SUBSCRIPTION_PLANS.find((p) => p.id === pendingChange.requestedPlanId)?.label ?? pendingChange.requestedPlanId}
+              </span>{" "}
+              ist eingereicht und wartet auf Genehmigung durch den Owner.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm text-muted">
+                Möchtest du ein anderes Paket? Der Wechsel muss vom Owner genehmigt werden und gilt
+                dann ab deiner nächsten Verlängerung — deine aktuelle Laufzeit bleibt unangetastet.
+              </p>
+              <form action={requestPlanChange} className="flex flex-wrap items-center gap-2">
+                <select
+                  name="requestedPlanId"
+                  defaultValue={SUBSCRIPTION_PLANS.find((p) => p.id !== member.subscriptionPlan)?.id}
+                  className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none ring-accent/40 focus:ring-2"
+                >
+                  {SUBSCRIPTION_PLANS.map((plan) => (
+                    <option key={plan.id} value={plan.id} disabled={plan.id === member.subscriptionPlan}>
+                      {plan.label} {plan.id === member.subscriptionPlan ? "(aktuell)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium transition hover:bg-surface-2"
+                >
+                  Wechsel beantragen
+                </button>
+              </form>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="card space-y-2 p-5 text-sm">
         <h2 className="text-sm font-semibold">Abo pausieren</h2>
