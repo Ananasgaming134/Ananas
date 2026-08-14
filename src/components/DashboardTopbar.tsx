@@ -51,7 +51,10 @@ export default function DashboardTopbar() {
   return (
     <div className="mb-4 flex items-center justify-between">
       <div>
-        <p className="text-[11px] font-medium uppercase tracking-wider text-muted/70">{section}</p>
+        <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted/70">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
+          {section}
+        </p>
         {/* Im Kundenbereich traegt die Topbar den Seitentitel (die Unterseiten
             selbst haben dort keine eigene H1 mehr, um Dopplung zu vermeiden).
             In der Verwaltung behalten die Seiten ihre eigene Ueberschrift -

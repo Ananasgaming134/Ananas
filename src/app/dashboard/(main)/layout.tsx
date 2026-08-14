@@ -6,13 +6,14 @@ import SignOutButton from "@/components/SignOutButton";
 import RoleBadge from "@/components/RoleBadge";
 import AnimatedBackground from "@/components/AnimatedBackground";
 import RoleWatcher from "@/components/RoleWatcher";
+import AreaScope from "@/components/AreaScope";
 import { SITE_NAME } from "@/lib/constants";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const member = await requireMember();
 
   return (
-    <div className="relative min-h-screen">
+    <AreaScope>
       <RoleWatcher />
       <AnimatedBackground />
 
@@ -69,6 +70,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {children}
         </div>
       </div>
-    </div>
+    </AreaScope>
   );
 }

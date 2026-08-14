@@ -86,7 +86,7 @@ export default function DashboardNav({ role }: { role: string }) {
       {isAufsichtPlus && (
         <Link
           href="/dashboard/verwaltung"
-          className="mt-3 flex items-center justify-between rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-sm font-medium text-accent transition hover:bg-accent/20"
+          className="mt-3 flex items-center justify-between rounded-lg border border-[#5b8cff]/30 bg-[#5b8cff]/10 px-3 py-2 text-sm font-medium text-[#5b8cff] transition hover:bg-[#5b8cff]/20"
         >
           Verwaltung
           <span aria-hidden>→</span>
