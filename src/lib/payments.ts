@@ -30,9 +30,12 @@ export function parsePaymentEmbed(embed: DiscordEmbed): ParsedPayment | null {
   if (!isIncoming) return null;
 
   const description = embed.description ?? "";
-  const amountMatch = description.match(/\*\*\+(\d+)\s*₵\*\*/);
+  // Betraege ab 1000 formatiert der Bot mit "." als Tausendertrennzeichen
+  // (z.B. "+1.000 ₵") - deshalb Ziffern UND Punkte zulassen und die Punkte
+  // vor dem Parsen entfernen.
+  const amountMatch = description.match(/\*\*\+([\d.]+)\s*₵\*\*/);
   if (!amountMatch) return null;
-  const amount = parseInt(amountMatch[1], 10);
+  const amount = parseInt(amountMatch[1].replace(/\./g, ""), 10);
 
   const senderLine = description.split("\n").find((l) => /\bvon\b/i.test(l));
   if (!senderLine) return null;
