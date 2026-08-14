@@ -94,7 +94,8 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Dein Guthaben" value={formatCoins(member.balance)} icon="💰" />
         <StatCard label="Ausleihen insgesamt" value={String(myLoans.length)} icon="📦" />
         <StatCard
           label="Aktuell ausgeliehen"

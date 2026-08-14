@@ -287,10 +287,13 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
                   {isExpired ? "Abgelaufen" : "Aktiv"}
                 </span>
               )}
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-xs font-medium text-accent">
-                <span aria-hidden>💰</span>
-                {formatCoins(target.balance)} Guthaben
-              </span>
+            </div>
+            <div className="mt-2.5 inline-flex items-center gap-3 rounded-xl border border-accent/30 bg-gradient-to-br from-accent/15 via-surface to-surface px-4 py-2.5">
+              <span className="icon-badge h-10 w-10 shrink-0 text-lg">💰</span>
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted">Guthaben</p>
+                <p className="text-xl font-bold tracking-tight text-accent">{formatCoins(target.balance)}</p>
+              </div>
             </div>
             {currentPlan ? (
               <p className="mt-1.5 text-sm text-muted">

@@ -108,7 +108,7 @@ model Payment {
   discordUsername  String
   reason           String?
   receivedAt       DateTime
-  status           String   @default("PENDING") // PENDING | APPLIED | IGNORED
+  status           String   @default("PENDING") // PENDING | APPLIED | DONATED | IGNORED
   memberId         String?
   member           Member?  @relation(fields: [memberId], references: [id])
   appliedPlanId    String?

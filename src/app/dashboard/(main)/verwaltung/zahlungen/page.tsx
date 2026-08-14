@@ -3,11 +3,12 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { checkPayments, creditPaymentToBalance, ignorePayment } from "@/app/actions/payments";
 import { isRefundEligible } from "@/lib/subscriptions";
-import { ROLES } from "@/lib/constants";
+import { MEMBER_STATUS, ROLES } from "@/lib/constants";
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "Ausstehend",
   APPLIED: "Übernommen",
+  DONATED: "Spende",
   IGNORED: "Ignoriert",
 };
 
@@ -36,7 +37,9 @@ export default async function ZahlungenPage() {
           <p className="mt-1 text-sm text-muted">
             Eingehende Business-Card-Überweisungen (BC-584289), automatisch per Discord-Username
             zugeordnet. Gutschreiben legt den Betrag als Guthaben (1 ₵ = 1 $) auf dem Konto an
-            &ndash; das Abbuchen eines Pakets passiert separat auf der Akte-Seite.
+            &ndash; das Abbuchen eines Pakets passiert separat auf der Akte-Seite. Nur aktive
+            Kunden können Guthaben aufladen; Zahlungen von Mitgliedern ohne aktiven Status zählen
+            automatisch als Spende.
           </p>
         </div>
         <form action={checkPayments}>
@@ -79,6 +82,11 @@ export default async function ZahlungenPage() {
                       <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
                         💰 ${payment.member.balance.toLocaleString("en-US")}
                       </span>
+                      {payment.member.status !== MEMBER_STATUS.ACTIVE && (
+                        <p className="mt-0.5 text-[11px] text-yellow-500">
+                          🎁 Kein aktiver Kunde — zählt als Spende, kein Guthaben
+                        </p>
+                      )}
                       {payment.member.lockedAt && (
                         <p className={`mt-0.5 text-[11px] ${isRefundEligible(payment.member) ? "text-danger" : "text-muted"}`}>
                           {isRefundEligible(payment.member)
