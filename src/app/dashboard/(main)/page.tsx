@@ -43,19 +43,26 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div className="card-glass relative overflow-hidden p-6 sm:p-8">
+      <div className="fade-up card-glass relative overflow-hidden p-6 sm:p-8">
         <div className="shimmer pointer-events-none absolute inset-0" />
-        <h1 className="relative text-2xl font-semibold">
+        <span className="pointer-events-none absolute -right-8 -top-8 text-[8rem] opacity-[0.06] select-none">
+          📦
+        </span>
+        <h1 className="relative text-2xl font-semibold sm:text-3xl">
           Willkommen zurück, <span className="text-gradient">{member.displayName}</span>
         </h1>
-        <p className="relative mt-2 text-sm text-muted">
-          Kundennummer {member.customerNumber ?? "-"} &middot; Monatliche Gebühr{" "}
-          {formatCoins(member.monthlyFee)}
-        </p>
+        <div className="relative mt-4 flex flex-wrap gap-2">
+          <span className="rounded-full border border-border bg-surface/60 px-3 py-1 text-xs text-muted">
+            Kundennummer <span className="font-mono text-foreground">{member.customerNumber ?? "-"}</span>
+          </span>
+          <span className="rounded-full border border-border bg-surface/60 px-3 py-1 text-xs text-muted">
+            Monatliche Gebühr <span className="text-foreground">{formatCoins(member.monthlyFee)}</span>
+          </span>
+        </div>
       </div>
 
       {isSuspended && (
-        <div className="card border-danger/40 bg-danger/10 p-4">
+        <div className="fade-up card border-danger/40 bg-danger/10 p-4">
           <p className="text-sm font-semibold text-danger">🚫 Ausleih-Sperre aktiv</p>
           <p className="mt-1 text-sm text-danger/90">
             {member.borrowSuspendedReason ?? "Du bist aktuell für das Ausleihen gesperrt."} Gesperrt
@@ -70,13 +77,13 @@ export default async function DashboardPage() {
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {QUICK_LINKS.map((link) => (
+        {QUICK_LINKS.map((link, i) => (
           <Link
             key={link.href}
             href={link.href}
-            className="card card-hover flex items-center gap-3 p-4"
+            className={`fade-up fade-up-${i + 1} card card-hover flex items-center gap-3 p-4`}
           >
-            <span className="text-2xl">{link.icon}</span>
+            <span className="icon-badge h-11 w-11 text-xl">{link.icon}</span>
             <div className="min-w-0">
               <p className="text-sm font-semibold">{link.label}</p>
               <p className="truncate text-xs text-muted">{link.text}</p>
@@ -86,21 +93,23 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Ausleihen insgesamt" value={String(myLoans.length)} />
+        <StatCard label="Ausleihen insgesamt" value={String(myLoans.length)} icon="📦" />
         <StatCard
           label="Aktuell ausgeliehen"
           value={String(myActiveLoans.length)}
           accent="accent-2"
+          icon="🔄"
         />
         <StatCard
           label="Lieblings-Item"
           value={topItems[0]?.name ?? "-"}
           hint={topItems[0] ? `${topItems[0].count}x ausgeliehen` : "noch keine Ausleihen"}
+          icon="⭐"
         />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="card p-5">
+        <div className="fade-up card p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Deine aktuell ausgeliehenen Items</h2>
             <Link href="/dashboard/items" className="text-xs text-accent hover:underline">
@@ -128,7 +137,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="card p-5">
+        <div className="fade-up fade-up-1 card p-5">
           <h2 className="mb-3 text-sm font-semibold">Deine meistgeliehenen Items</h2>
           {topItems.length === 0 ? (
             <p className="text-sm text-muted">Noch keine Ausleihen vorhanden.</p>
@@ -149,7 +158,7 @@ export default async function DashboardPage() {
       </div>
 
       <div
-        className={`card border-l-4 p-5 ${
+        className={`fade-up card border-l-4 p-5 ${
           currentPlan ? (isExpired ? "border-l-danger" : "border-l-accent-2") : "border-l-border"
         }`}
       >

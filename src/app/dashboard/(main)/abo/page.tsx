@@ -10,10 +10,28 @@ export default async function AboPage() {
     where: { memberId: member.id, status: "PENDING" },
   });
 
+  const INCLUDED_FEATURES = [
+    "Zugriff auf den kompletten Item-Bestand",
+    "Ausleihen sowohl über die Website als auch direkt in Discord",
+    "Automatische Zahlungs-Zuordnung per Verwendungszweck",
+    "Pausieren jederzeit über ein Support-Ticket möglich",
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {SUBSCRIPTION_PLANS.map((plan) => {
+      <div className="fade-up text-center sm:text-left">
+        <p className="flex items-center justify-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted/70 sm:justify-start">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
+          Angebote
+        </p>
+        <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Wähle dein Paket</h1>
+        <p className="mt-2 text-sm text-muted">
+          Je länger die Laufzeit, desto günstiger pro Monat — jederzeit wechselbar.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+        {SUBSCRIPTION_PLANS.map((plan, i) => {
           const monthlyRate = plan.price / plan.months;
           const baseMonthlyRate = SUBSCRIPTION_PLANS[0].price / SUBSCRIPTION_PLANS[0].months;
           const savingsPct = Math.round((1 - monthlyRate / baseMonthlyRate) * 100);
@@ -23,32 +41,47 @@ export default async function AboPage() {
           return (
             <div
               key={plan.id}
-              className={`card-hover relative rounded-xl border p-5 ${
-                isBestValue ? "border-accent/50 bg-accent/5" : "border-border bg-surface"
+              className={`fade-up fade-up-${i + 1} card-hover relative overflow-hidden rounded-2xl border p-6 ${
+                isBestValue
+                  ? "border-accent/60 bg-gradient-to-b from-accent/10 via-surface to-surface shadow-[0_0_40px_-12px_var(--accent)]"
+                  : "border-border bg-surface"
               }`}
             >
+              {isBestValue && <div className="gradient-top-bar" />}
               {isBestValue && (
-                <span className="absolute -top-2.5 right-4 rounded-full bg-accent px-2.5 py-0.5 text-[10px] font-semibold text-black">
-                  Beliebt
+                <span className="absolute -top-2.5 right-5 rounded-full bg-accent px-2.5 py-0.5 text-[10px] font-semibold text-black shadow-md">
+                  ⭐ Beliebt
                 </span>
               )}
               {isCurrent && (
                 <span className="mb-2 inline-block rounded-full border border-accent-2/40 bg-accent-2/10 px-2.5 py-0.5 text-[10px] font-medium text-accent-2">
-                  Dein aktuelles Paket
+                  ✓ Dein aktuelles Paket
                 </span>
               )}
               <p className="text-base font-semibold">{plan.label}</p>
-              <p className="mt-2 text-2xl font-semibold text-accent">{formatCoins(plan.price)}</p>
+              <p className="mt-3 text-3xl font-bold tracking-tight text-accent">{formatCoins(plan.price)}</p>
               <p className="mt-1 text-xs text-muted">
                 {formatCoins(Math.round(monthlyRate))} / Monat
-                {savingsPct > 0 && <span className="ml-1.5 text-accent-2">-{savingsPct}%</span>}
+                {savingsPct > 0 && (
+                  <span className="ml-1.5 rounded-full bg-accent-2/15 px-1.5 py-0.5 font-medium text-accent-2">
+                    -{savingsPct}%
+                  </span>
+                )}
               </p>
+              <ul className="mt-5 space-y-2 border-t border-border pt-4 text-xs text-muted">
+                {INCLUDED_FEATURES.map((f) => (
+                  <li key={f} className="flex items-start gap-2">
+                    <span className="mt-0.5 text-accent-2">✓</span>
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           );
         })}
       </div>
 
-      <div className="card space-y-3 p-5">
+      <div className="fade-up card space-y-3 p-5">
         <h2 className="text-sm font-semibold">So funktioniert die Bezahlung</h2>
         <p className="text-sm text-muted">
           Überweise den Betrag für die gewünschte Laufzeit an die Business-Card{" "}
@@ -79,7 +112,7 @@ export default async function AboPage() {
       </div>
 
       {member.subscriptionPlan && (
-        <div className="card space-y-3 p-5">
+        <div className="fade-up card space-y-3 p-5">
           <h2 className="text-sm font-semibold">Paket wechseln</h2>
           {pendingChange ? (
             <p className="text-sm text-muted">
@@ -119,7 +152,7 @@ export default async function AboPage() {
         </div>
       )}
 
-      <div className="card space-y-2 p-5 text-sm">
+      <div className="fade-up card space-y-2 p-5 text-sm">
         <h2 className="text-sm font-semibold">Abo pausieren</h2>
         <p className="text-muted">
           Du brauchst mal eine Pause? Über ein{" "}

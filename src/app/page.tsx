@@ -37,22 +37,22 @@ export default async function Home() {
       </header>
 
       <section className="mx-auto flex max-w-6xl flex-col items-center px-6 pb-14 pt-16 text-center sm:pt-24">
-        <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-surface/60 px-4 py-1.5 text-xs font-medium text-muted">
+        <span className="fade-up mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-surface/60 px-4 py-1.5 text-xs font-medium text-muted">
           <span className="h-1.5 w-1.5 rounded-full bg-accent-2 animate-pulse-slow" />
           Unabhängiger Item-Verleih, aktiv auf {SERVER_NAME}
         </span>
 
-        <h1 className="max-w-3xl text-4xl font-semibold leading-tight tracking-tight sm:text-6xl">
+        <h1 className="fade-up fade-up-1 max-w-3xl text-4xl font-semibold leading-tight tracking-tight sm:text-6xl">
           <span className="text-gradient">{SITE_NAME}</span>
           <br />
           Wir für euch &ndash; hier leiht ihr euch eure Ausrüstung.
         </h1>
-        <p className="mt-6 max-w-xl text-balance text-base text-muted sm:text-lg">
+        <p className="fade-up fade-up-2 mt-6 max-w-xl text-balance text-base text-muted sm:text-lg">
           Von der Community, für die Community: Ihr kommt vorbei, sucht euch das
           passende Item aus, und wir kümmern uns um den Rest &ndash; transparent,
           vollständig geloggt, direkt über Discord abgesichert.
         </p>
-        <p className="mt-3 max-w-xl text-xs text-muted">
+        <p className="fade-up fade-up-3 mt-3 max-w-xl text-xs text-muted">
           Wir sind ein eigenständiger Anbieter und aktiv auf{" "}
           <a
             href={SERVER_URL}
@@ -66,7 +66,7 @@ export default async function Home() {
           Rollen laufen über unseren eigenen Discord &bdquo;{AUTH_DISCORD_SERVER_NAME}&ldquo;.
         </p>
 
-        <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+        <div className="fade-up fade-up-4 mt-9 flex flex-col gap-3 sm:flex-row">
           <Link
             href={loggedIn ? "/dashboard" : "/login"}
             className="rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-black shadow-[0_8px_30px_-8px_var(--accent)] transition hover:brightness-110"
@@ -117,16 +117,19 @@ export default async function Home() {
             icon="🔒"
             title="Discord-abgesicherter Zugang"
             description="Login ausschließlich per Discord-Account. Nur wer bei uns die Rolle Kunde, Aufsichtsperson oder Owner hat, kommt rein."
+            delay={1}
           />
           <FeatureCard
             icon="📁"
             title="Lückenlose Akten"
             description="Jeder Kunde bekommt eine eigene Akte mit Ausleihhistorie. Aufsichtspersonen und Owner sehen alle Akten, jede Änderung wird geloggt."
+            delay={2}
           />
           <FeatureCard
             icon="📦"
             title="Immer ausgerüstet"
             description="Vom Werkzeug bis zur Rüstung: unser Bestand wächst laufend, der Gesamtwert des LeihCenters ist hier live einsehbar."
+            delay={3}
           />
         </div>
       </section>
@@ -147,16 +150,16 @@ function FeatureCard({
   icon,
   title,
   description,
+  delay,
 }: {
   icon: string;
   title: string;
   description: string;
+  delay?: number;
 }) {
   return (
-    <div className="card card-hover p-6">
-      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface-2 text-lg">
-        {icon}
-      </div>
+    <div className={`fade-up${delay ? ` fade-up-${delay}` : ""} card card-hover p-6`}>
+      <div className="icon-badge mb-3 h-10 w-10 text-lg">{icon}</div>
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       <p className="mt-2 text-sm leading-relaxed text-muted">{description}</p>
     </div>
