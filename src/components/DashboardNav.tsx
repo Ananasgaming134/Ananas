@@ -26,6 +26,7 @@ const VERWALTUNG_ITEMS: NavItem[] = [
   { href: "/dashboard/verwaltung/bewerbungen", label: "Bewerbungen", minRole: ROLES.OWNER },
   { href: "/dashboard/verwaltung/tickets", label: "Tickets" },
   { href: "/dashboard/verwaltung/kunden", label: "Kunden" },
+  { href: "/dashboard/verwaltung/statistik", label: "Statistik" },
   { href: "/dashboard/verwaltung/mitglieder", label: "Mitglieder-Archiv" },
   { href: "/dashboard/verwaltung/logs", label: "Logs" },
   { href: "/dashboard/verwaltung/zahlungen", label: "Zahlungen" },

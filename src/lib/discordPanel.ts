@@ -4,8 +4,11 @@ import { LOAN_STATUS, SITE_NAME } from "@/lib/constants";
 import {
   CATEGORY_ITEM_SELECT_ID,
   CATEGORY_PAGE_PREFIX,
+  ITEM_SEARCH_PAGE_PREFIX,
+  ITEM_SEARCH_SELECT_ID,
   NO_CATEGORY_VALUE,
   PANEL_CATEGORY_SELECT_ID,
+  PANEL_SEARCH_BUTTON_ID,
   PANEL_SELECT_ID,
   TICKET_OPEN_BEWERBUNG_ID,
   TICKET_OPEN_SUPPORT_ID,
@@ -133,6 +136,18 @@ async function buildPanelPayload() {
     ];
   }
 
+  // Suchen-Button immer zusaetzlich anzeigen, solange es ueberhaupt Items
+  // gibt - unabhaengig davon, ob gerade die flache oder die Kategorie-
+  // Auswahl aktiv ist, damit man nicht erst durch Kategorien klicken muss.
+  if (items.length > 0) {
+    components.push({
+      type: 1,
+      components: [
+        { type: 2, style: 2, label: "🔍 Item suchen", custom_id: PANEL_SEARCH_BUTTON_ID },
+      ],
+    });
+  }
+
   return { embeds: [embed], components };
 }
 
@@ -223,6 +238,100 @@ export async function buildCategoryItemSelectPayload(categoryValue: string, page
 
   return {
     content: `Item auswählen (${totalInCategory} insgesamt${pageCount > 1 ? `, Seite ${safePage + 1}/${pageCount}` : ""}):`,
+    components,
+  };
+}
+
+/**
+ * Wie buildCategoryItemSelectPayload, aber gefiltert per Freitext-Suche
+ * (Name enthaelt Suchbegriff, ohne Gross-/Kleinschreibung) statt per
+ * Kategorie - sucht immer ueber ALLE Items. `query` wird 1:1 in den
+ * Paging-Button-custom_id eingebettet, deshalb auf eine sichere Laenge
+ * begrenzt (Discord erlaubt max. 100 Zeichen pro custom_id).
+ */
+export async function buildItemSearchResultPayload(query: string, page = 0) {
+  const safeQuery = query.trim().slice(0, 60);
+  if (!safeQuery) {
+    return { content: "Bitte einen Suchbegriff eingeben.", components: [] };
+  }
+
+  const where = { name: { contains: safeQuery, mode: "insensitive" as const } };
+  const totalMatches = await prisma.item.count({ where });
+  if (totalMatches === 0) {
+    return { content: `Kein Item gefunden für „${safeQuery}“.`, components: [] };
+  }
+
+  const pageCount = Math.max(1, Math.ceil(totalMatches / MAX_SELECT_OPTIONS));
+  const safePage = Math.min(Math.max(0, page), pageCount - 1);
+
+  const items = await prisma.item.findMany({
+    where,
+    orderBy: { name: "asc" },
+    skip: safePage * MAX_SELECT_OPTIONS,
+    take: MAX_SELECT_OPTIONS,
+    include: { category: true },
+  });
+
+  const activeLoans = await prisma.loan.groupBy({
+    by: ["itemId"],
+    where: { status: LOAN_STATUS.ACTIVE, itemId: { in: items.map((i) => i.id) } },
+    _count: { itemId: true },
+  });
+  const activeByItem = new Map(activeLoans.map((l) => [l.itemId, l._count.itemId]));
+
+  const components: unknown[] = [
+    {
+      type: 1,
+      components: [
+        {
+          type: 3,
+          custom_id: ITEM_SEARCH_SELECT_ID,
+          placeholder: "Item auswählen...",
+          options: items.map((item) => {
+            const borrowed = activeByItem.get(item.id) ?? 0;
+            const available = item.quantityTotal - borrowed;
+            return {
+              label: item.name.slice(0, 100),
+              value: item.id,
+              description: `${item.category?.name ?? "Ohne Kategorie"} · ${available}/${item.quantityTotal} frei`.slice(0, 100),
+            };
+          }),
+        },
+      ],
+    },
+  ];
+
+  if (pageCount > 1) {
+    components.push({
+      type: 1,
+      components: [
+        {
+          type: 2,
+          style: 2,
+          label: "◀ Zurück",
+          custom_id: `${ITEM_SEARCH_PAGE_PREFIX}${safePage - 1}:${safeQuery}`,
+          disabled: safePage === 0,
+        },
+        {
+          type: 2,
+          style: 2,
+          label: `Seite ${safePage + 1}/${pageCount}`,
+          custom_id: `${ITEM_SEARCH_PAGE_PREFIX}${safePage}:${safeQuery}`,
+          disabled: true,
+        },
+        {
+          type: 2,
+          style: 2,
+          label: "Weiter ▶",
+          custom_id: `${ITEM_SEARCH_PAGE_PREFIX}${safePage + 1}:${safeQuery}`,
+          disabled: safePage >= pageCount - 1,
+        },
+      ],
+    });
+  }
+
+  return {
+    content: `🔍 „${safeQuery}“ — ${totalMatches} Treffer${pageCount > 1 ? `, Seite ${safePage + 1}/${pageCount}` : ""}:`,
     components,
   };
 }

@@ -1,9 +1,11 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
+import { generateCustomerNumber } from "@/lib/customerNumber";
 import { canManage, MEMBER_STATUS, ROLES } from "@/lib/constants";
 import {
   adjustBalanceCore,
@@ -199,6 +201,52 @@ export async function updateMinecraftName(memberId: string, formData: FormData) 
   });
 
   refreshMemberPages(memberId);
+}
+
+/**
+ * Legt fuer einen Kunden, der die Discord-Kunde-Rolle hat sich aber noch
+ * nie auf der Website eingeloggt hat, einen vollwertigen Member-Datensatz
+ * an - damit Owner/Aufsicht auch fuer diese Person Aktionen (Guthaben,
+ * Abo etc.) auf der Akte-Seite ausfuehren koennen. Ob die Person sich
+ * jemals eingeloggt hat, ist fuer die Verwaltung irrelevant. Idempotent:
+ * falls der Datensatz zwischenzeitlich schon existiert (z.B. durch die
+ * Live-Rollenerkennung), wird er einfach wiederverwendet.
+ */
+export async function activateDiscordMember(formData: FormData) {
+  await requireMember(ROLES.AUFSICHT);
+
+  const discordId = String(formData.get("discordId") ?? "");
+  const username = String(formData.get("username") ?? "");
+  const displayName = String(formData.get("displayName") ?? username);
+  const avatarUrl = formData.get("avatarUrl") ? String(formData.get("avatarUrl")) : null;
+  if (!discordId || !username) return;
+
+  const existing = await prisma.member.findUnique({ where: { discordId } });
+  const member =
+    existing ??
+    (await prisma.member.create({
+      data: {
+        discordId,
+        username,
+        displayName,
+        avatarUrl,
+        minecraftName: "",
+        role: ROLES.KUNDE,
+        status: MEMBER_STATUS.ACTIVE,
+        customerNumber: await generateCustomerNumber(),
+      },
+    }));
+
+  if (!existing) {
+    await logAction({
+      targetId: member.id,
+      action: "MEMBER_CREATED",
+      details: `Automatisch angelegt aus der Kunden-Liste (Discord-Rolle vorhanden, noch nie eingeloggt).`,
+    });
+    refreshMemberPages(member.id);
+  }
+
+  redirect(`/dashboard/akte/${member.id}`);
 }
 
 /**

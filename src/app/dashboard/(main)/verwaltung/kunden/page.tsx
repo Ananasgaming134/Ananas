@@ -3,6 +3,7 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import StatusBadge from "@/components/StatusBadge";
 import StatCard from "@/components/StatCard";
+import { activateDiscordMember } from "@/app/actions/members";
 import { fetchGuildMembersWithRole, roleIdsFromEnv } from "@/lib/discord";
 import { getSubscriptionPlan, LOAN_STATUS, MEMBER_STATUS, ROLES } from "@/lib/constants";
 
@@ -197,31 +198,40 @@ export default async function KundenPage({
             );
           })}
           {filteredDiscordOnlyKunden.map((kunde) => (
-            <div key={kunde.discordId} className="card flex flex-col gap-3 bg-surface/40 p-4">
-              <div className="flex items-center gap-3">
-                {kunde.avatarUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={kunde.avatarUrl}
-                    alt={kunde.displayName}
-                    className="h-11 w-11 shrink-0 rounded-full border border-border object-cover"
-                  />
-                ) : (
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-sm">
-                    {kunde.displayName.slice(0, 2).toUpperCase()}
+            <form key={kunde.discordId} action={activateDiscordMember}>
+              <input type="hidden" name="discordId" value={kunde.discordId} />
+              <input type="hidden" name="username" value={kunde.username} />
+              <input type="hidden" name="displayName" value={kunde.displayName} />
+              <input type="hidden" name="avatarUrl" value={kunde.avatarUrl ?? ""} />
+              <button
+                type="submit"
+                className="card card-hover flex w-full flex-col gap-3 bg-surface/40 p-4 text-left"
+              >
+                <div className="flex items-center gap-3">
+                  {kunde.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={kunde.avatarUrl}
+                      alt={kunde.displayName}
+                      className="h-11 w-11 shrink-0 rounded-full border border-border object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-sm">
+                      {kunde.displayName.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{kunde.displayName}</p>
+                    <p className="truncate text-xs text-muted">@{kunde.username}</p>
                   </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold">{kunde.displayName}</p>
-                  <p className="truncate text-xs text-muted">@{kunde.username}</p>
                 </div>
-              </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge status={MEMBER_STATUS.ACTIVE} />
-                <span className="text-[11px] text-muted">noch nicht auf der Seite eingeloggt</span>
-              </div>
-            </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={MEMBER_STATUS.ACTIVE} />
+                  <span className="text-[11px] text-muted">Noch nicht eingeloggt &ndash; zum Öffnen klicken</span>
+                </div>
+              </button>
+            </form>
           ))}
         </div>
       )}

@@ -51,6 +51,22 @@ export type CreateTicketResult = { ok: true; ticketId: string } | { ok: false; e
  * auf der Website einfach.
  */
 export async function createTicketCore(input: CreateTicketInput): Promise<CreateTicketResult> {
+  const existingOpen = await prisma.ticket.findFirst({
+    where: {
+      applicantDiscordId: input.applicantDiscordId,
+      category: input.category,
+      status: { in: [TICKET_STATUS.OPEN, TICKET_STATUS.CLAIMED] },
+    },
+  });
+  if (existingOpen) {
+    return {
+      ok: false,
+      error: existingOpen.discordChannelId
+        ? `Du hast bereits ein offenes Ticket dieser Art: <#${existingOpen.discordChannelId}>`
+        : "Du hast bereits ein offenes Ticket dieser Art - bitte warte, bis es bearbeitet wurde.",
+    };
+  }
+
   const deployment = await prisma.botDeployment.findFirst({ where: { active: true } });
 
   const ticket = await prisma.ticket.create({

@@ -4,6 +4,7 @@ import { logAction } from "@/lib/audit";
 import { borrowItemCore, returnLoanCore } from "@/lib/loans";
 import {
   buildCategoryItemSelectPayload,
+  buildItemSearchResultPayload,
   postOrUpdatePanel,
   postOrUpdateTicketPanel,
   refreshPanelsQuietly,
@@ -24,7 +25,11 @@ import {
   BORROW_PREFIX,
   CATEGORY_ITEM_SELECT_ID,
   CATEGORY_PAGE_PREFIX,
+  ITEM_SEARCH_MODAL_ID,
+  ITEM_SEARCH_PAGE_PREFIX,
+  ITEM_SEARCH_SELECT_ID,
   PANEL_CATEGORY_SELECT_ID,
+  PANEL_SEARCH_BUTTON_ID,
   PANEL_SELECT_ID,
   RETURN_PREFIX,
   SUPPORT_MODAL_ID,
@@ -319,6 +324,49 @@ async function handleComponent(interaction: DiscordInteractionPayload) {
     });
   }
 
+  if (customId === PANEL_SEARCH_BUTTON_ID) {
+    return Response.json({
+      type: InteractionResponseType.MODAL,
+      data: {
+        custom_id: ITEM_SEARCH_MODAL_ID,
+        title: "Item suchen",
+        components: [
+          {
+            type: 1,
+            components: [
+              {
+                type: 4,
+                custom_id: "query",
+                style: 1,
+                label: "Wonach suchst du?",
+                max_length: 60,
+                required: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+  }
+
+  if (customId === ITEM_SEARCH_SELECT_ID) {
+    const itemId: string | undefined = interaction.data?.values?.[0];
+    if (!itemId) return ephemeral("Kein Item ausgewählt.");
+    return respondWithItemActions(itemId, interaction.guild_id, memberRoles, discordUser, true);
+  }
+
+  if (customId.startsWith(ITEM_SEARCH_PAGE_PREFIX)) {
+    const rest = customId.slice(ITEM_SEARCH_PAGE_PREFIX.length);
+    const separatorIndex = rest.indexOf(":");
+    const page = parseInt(rest.slice(0, separatorIndex), 10) || 0;
+    const query = rest.slice(separatorIndex + 1);
+    const payload = await buildItemSearchResultPayload(query, page);
+    return Response.json({
+      type: InteractionResponseType.UPDATE_MESSAGE,
+      data: { ...payload, flags: EPHEMERAL },
+    });
+  }
+
   if (customId.startsWith(BORROW_PREFIX)) {
     const itemId = customId.slice(BORROW_PREFIX.length);
     return handleBorrow(itemId, interaction.guild_id, memberRoles, discordUser);
@@ -505,6 +553,15 @@ async function handleModalSubmit(interaction: DiscordInteractionPayload) {
   const customId = interaction.data?.custom_id ?? "";
   const discordUser = interaction.member?.user ?? interaction.user;
   if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
+
+  if (customId === ITEM_SEARCH_MODAL_ID) {
+    const query = getModalValue(interaction, "query");
+    const payload = await buildItemSearchResultPayload(query, 0);
+    return Response.json({
+      type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+      data: { ...payload, flags: EPHEMERAL },
+    });
+  }
 
   if (customId === SUPPORT_MODAL_ID) {
     const subject = getModalValue(interaction, "subject") || "Support-Anfrage";

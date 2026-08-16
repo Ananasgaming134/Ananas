@@ -20,6 +20,15 @@ export const CATEGORY_PAGE_PREFIX = "leihcenter_category_page:";
 /** Wert im Kategorie-Select fuer Items ohne zugeordnete Kategorie. */
 export const NO_CATEGORY_VALUE = "__none";
 
+// Freitext-Suche im Panel: Button oeffnet ein Modal mit einem Textfeld,
+// Ergebnis kommt als eigenes (ggf. seitenweises) Select - unabhaengig von
+// der Kategorie-Auswahl, sucht immer ueber alle Items.
+export const PANEL_SEARCH_BUTTON_ID = "leihcenter_search_open";
+export const ITEM_SEARCH_MODAL_ID = "leihcenter_search_modal";
+export const ITEM_SEARCH_SELECT_ID = "leihcenter_search_select";
+/** custom_id-Format: `${ITEM_SEARCH_PAGE_PREFIX}${page}:${query}` - Seitenwechsel innerhalb der Suchergebnisse. */
+export const ITEM_SEARCH_PAGE_PREFIX = "leihcenter_search_page:";
+
 // Ticket-System: Panel-Buttons oeffnen ein Discord-Modal (Text-Eingaben,
 // keine Selects moeglich - deshalb Bewerbung zweistufig: erst Paket per
 // Select waehlen, dann Modal). custom_id-Format bei Claim/Close:

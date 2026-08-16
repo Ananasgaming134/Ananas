@@ -74,6 +74,10 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
   const boundUnlock = unlockMember.bind(null, target.id);
   const showManageActions = isAufsichtPlus && !isSelf && canManage(viewer.role, target.role);
   const showOwnerActions = hasAtLeastRole(viewer.role, ROLES.OWNER) && !isSelf && canManage(viewer.role, target.role);
+  // Guthaben-Buchung ist bewusst weniger streng als showOwnerActions: der
+  // Owner soll auch bei sich selbst (einzige/erste Zeit ohne weitere
+  // Kunden) und bei Kollegen auf gleicher Stufe manuell buchen koennen.
+  const canAdjustBalance = hasAtLeastRole(viewer.role, ROLES.OWNER);
 
   const currentPlan = getSubscriptionPlan(target.subscriptionPlan);
   const now = new Date();
@@ -324,7 +328,7 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
                 />
               </div>
             )}
-            {showOwnerActions && (
+            {canAdjustBalance && (
               <div className="mt-2">
                 <BalanceAdjustForm memberId={target.id} />
               </div>
