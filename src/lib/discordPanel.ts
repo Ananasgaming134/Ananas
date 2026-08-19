@@ -17,6 +17,7 @@ import {
 const MAX_SELECT_OPTIONS = 25; // Discord-Select-Menues erlauben maximal 25 Optionen
 const MAX_EMBED_FIELDS = 25; // Discord-Limit: maximal 25 Felder pro Embed
 const MAX_FIELD_CHARS = 1000; // Discord-Limit pro Feldwert ist 1024 - etwas Puffer lassen
+const MAX_EMBED_CHARS = 5600; // Discord-Gesamtlimit pro Embed ist 6000 - Puffer fuer Titel/Footer
 
 const DISCORD_API = "https://discord.com/api/v10";
 
@@ -83,32 +84,6 @@ async function buildPanelPayload() {
     return a.label.localeCompare(b.label, "de");
   });
 
-  // Discord erlaubt maximal 25 Embed-Felder und 1024 Zeichen pro Feld -
-  // deshalb pro Kategorie ein Feld und bei Ueberlauf sauber abschneiden,
-  // statt die Nachricht von Discord ablehnen zu lassen.
-  const fields: { name: string; value: string; inline: boolean }[] = [];
-  let hiddenItems = 0;
-
-  for (const group of sortedGroups) {
-    if (fields.length >= MAX_EMBED_FIELDS) {
-      hiddenItems += group.lines.length;
-      continue;
-    }
-    let value = "";
-    let shown = 0;
-    for (const line of group.lines) {
-      if (value.length + line.length + 1 > MAX_FIELD_CHARS) break;
-      value += (value ? "\n" : "") + line;
-      shown += 1;
-    }
-    hiddenItems += group.lines.length - shown;
-    fields.push({
-      name: `${group.label} · ${group.lines.length}`,
-      value: value || "—",
-      inline: false,
-    });
-  }
-
   const description =
     items.length === 0
       ? "Aktuell sind keine Items hinterlegt."
@@ -119,6 +94,41 @@ async function buildPanelPayload() {
           "",
           "🟢 frei · 🟡 fast vergriffen · 🔴 komplett verliehen",
         ].join("\n");
+
+  // Discord begrenzt ein Embed auf 25 Felder, 1024 Zeichen pro Feld UND
+  // 6000 Zeichen insgesamt (Titel + Beschreibung + alle Felder + Footer).
+  // Nur das Gesamtlimit zu ignorieren hat das Panel bei grossem Bestand
+  // komplett scheitern lassen (MAX_EMBED_SIZE_EXCEEDED), deshalb wird hier
+  // ein laufendes Budget mitgefuehrt und sauber abgeschnitten.
+  const fields: { name: string; value: string; inline: boolean }[] = [];
+  let hiddenItems = 0;
+  let budget = MAX_EMBED_CHARS - description.length - 120; // Titel + Footer grosszuegig einkalkuliert
+
+  for (const group of sortedGroups) {
+    const name = `${group.label} · ${group.lines.length}`;
+    if (fields.length >= MAX_EMBED_FIELDS || budget - name.length < 40) {
+      hiddenItems += group.lines.length;
+      continue;
+    }
+    budget -= name.length;
+
+    let value = "";
+    let shown = 0;
+    for (const line of group.lines) {
+      const cost = line.length + 1;
+      if (value.length + cost > MAX_FIELD_CHARS || cost > budget) break;
+      value += (value ? "\n" : "") + line;
+      budget -= cost;
+      shown += 1;
+    }
+    hiddenItems += group.lines.length - shown;
+    if (shown === 0) {
+      // Kategorie passt nicht mehr rein - Feldnamen-Budget zurueckgeben.
+      budget += name.length;
+      continue;
+    }
+    fields.push({ name, value, inline: false });
+  }
 
   const embed = {
     title: `📦 ${SITE_NAME} — Ausleihe`,
