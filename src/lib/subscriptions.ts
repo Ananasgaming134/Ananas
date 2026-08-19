@@ -90,6 +90,9 @@ export async function setSubscriptionPlanCore(
       feePaidUntil: newExpiry,
       subscriptionReminderSentAt: null,
       balance: { decrement: plan.price },
+      // Abo steht - die 3-Stunden-Zahlungsfrist nach der Rollenvergabe ist
+      // damit erfuellt und darf nicht mehr zum Rollenentzug fuehren.
+      graceUntil: null,
     },
   });
 

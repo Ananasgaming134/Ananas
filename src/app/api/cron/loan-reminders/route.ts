@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { enforceAccessRules } from "@/lib/accessControl";
 import { processLoanReminders } from "@/lib/loanReminders";
 import { postSubscriptionReminders } from "@/lib/subscriptions";
 import { syncMinecraftNames } from "@/lib/verification";
@@ -29,6 +30,11 @@ export async function GET(request: Request) {
 
   const result = await processLoanReminders();
 
+  // Zugangsregeln laufen bei JEDEM Durchlauf (also minuetlich) mit - abgelaufene
+  // Abos, verstrichene Zahlungsfristen und in Discord entfernte Rollen sollen
+  // nicht bis zur naechsten vollen Stunde weiterbestehen.
+  const access = await enforceAccessRules().catch((err) => ({ error: String(err) }));
+
   const hourly = url.searchParams.get("hourly") === "1" || new Date().getMinutes() === 0;
   let subscriptions: unknown = "übersprungen";
   let nameSync: unknown = "übersprungen";
@@ -38,5 +44,5 @@ export async function GET(request: Request) {
     nameSync = await syncMinecraftNames().catch((err) => ({ error: String(err) }));
   }
 
-  return NextResponse.json({ ok: true, ...result, subscriptions, nameSync });
+  return NextResponse.json({ ok: true, ...result, access, subscriptions, nameSync });
 }

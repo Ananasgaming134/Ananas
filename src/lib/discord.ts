@@ -162,6 +162,30 @@ export async function grantGuildRole(
   return { ok: true };
 }
 
+/**
+ * Entzieht eine Discord-Server-Rolle live per Bot-Token
+ * (DELETE /guilds/{guild}/members/{user}/roles/{role}). Gegenstueck zu
+ * grantGuildRole - wird genutzt, wenn ein Abo ablaeuft oder die
+ * Zahlungsfrist nach der Rollenvergabe verstreicht (siehe
+ * src/lib/accessControl.ts). Ein 404 bedeutet, dass die Person den Server
+ * schon verlassen hat bzw. die Rolle ohnehin nicht mehr hat - das ist fuer
+ * uns dasselbe Ergebnis und wird deshalb als Erfolg gewertet.
+ */
+export async function revokeGuildRole(
+  guildId: string,
+  userId: string,
+  roleId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const res = await fetch(
+    `https://discord.com/api/v10/guilds/${guildId}/members/${userId}/roles/${roleId}`,
+    { method: "DELETE", headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}` } }
+  );
+  if (res.ok || res.status === 204 || res.status === 404) return { ok: true };
+  return { ok: false, error: `Rolle konnte nicht entzogen werden (${res.status}).` };
+}
+
 // Discord-Kanal-/Berechtigungs-Konstanten fuers Ticket-System (siehe
 // src/lib/tickets.ts). Werte aus der offiziellen Discord-API-Dokumentation.
 const CHANNEL_TYPE_GUILD_TEXT = 0;

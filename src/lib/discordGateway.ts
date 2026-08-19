@@ -1,7 +1,9 @@
 import { Client, GatewayIntentBits, type GuildMember, type PartialGuildMember } from "discord.js";
 import { WORTKETTEN_CHANNEL_ID } from "@/lib/constants";
+import { prisma } from "@/lib/prisma";
 import { processWordChainAttempt } from "@/lib/wordChain";
 import { roleIdsFromEnv } from "@/lib/discord";
+import { revokeAccessAndRole, startGracePeriodIfNeeded } from "@/lib/accessControl";
 import { ensureMemberFromDiscordUser } from "@/lib/discordInteractions";
 
 const globalForGateway = globalThis as unknown as { discordGatewayClient?: Client };
@@ -37,30 +39,54 @@ async function handleMessage(message: {
 }
 
 /**
- * Sobald jemand die konfigurierte Kunde-Rolle neu bekommt, wird sofort ein
- * Member-Datensatz angelegt (idempotent - ensureMemberFromDiscordUser legt
- * nur an, falls noch keiner existiert, z.B. weil die Bewerbung schon einen
- * angelegt hat). Deckt den Fall ab, dass die Rolle manuell in Discord
- * vergeben wird, ohne den Bewerbungsprozess zu durchlaufen.
+ * Reagiert sofort auf Rollenaenderungen in Discord - beide Richtungen:
+ *
+ * - Rolle NEU vergeben: Member-Datensatz sicherstellen (idempotent) und die
+ *   3-Stunden-Zahlungsfrist starten, falls noch kein Abo laeuft.
+ * - Rolle ENTZOGEN: Zugang sofort sperren, ohne auf den naechsten Cron-Lauf
+ *   oder die Client-Pruefung zu warten.
+ *
+ * Staff-Rollen (Owner/Aufsicht) zaehlen ebenfalls als Zugang - wer die noch
+ * hat, verliert beim Entzug der Kunde-Rolle nichts.
  */
 async function handleMemberRoleUpdate(oldMember: GuildMember | PartialGuildMember, newMember: GuildMember) {
   const kundeRoleIds = roleIdsFromEnv("DISCORD_ROLE_KUNDE");
   if (kundeRoleIds.length === 0) return;
+  const staffRoleIds = [...roleIdsFromEnv("DISCORD_ROLE_OWNER"), ...roleIdsFromEnv("DISCORD_ROLE_AUFSICHT")];
 
   const hadRole = oldMember.roles?.cache.some((r) => kundeRoleIds.includes(r.id)) ?? false;
   const hasRole = newMember.roles.cache.some((r) => kundeRoleIds.includes(r.id));
-  if (hadRole || !hasRole) return;
+  const hasStaffRole = newMember.roles.cache.some((r) => staffRoleIds.includes(r.id));
 
-  try {
-    await ensureMemberFromDiscordUser({
-      id: newMember.user.id,
-      username: newMember.user.username,
-      global_name: newMember.user.globalName,
-      avatar: newMember.user.avatar,
-    });
-    console.log(`[gateway] Member fuer ${newMember.user.username} (${newMember.user.id}) per Rollenvergabe sichergestellt.`);
-  } catch (err) {
-    console.error("[gateway] Konnte Member bei Rollenvergabe nicht anlegen:", err);
+  if (!hadRole && hasRole) {
+    try {
+      const member = await ensureMemberFromDiscordUser({
+        id: newMember.user.id,
+        username: newMember.user.username,
+        global_name: newMember.user.globalName,
+        avatar: newMember.user.avatar,
+      });
+      await startGracePeriodIfNeeded(member.id);
+      console.log(`[gateway] Kunde-Rolle fuer ${newMember.user.username} vergeben - Zahlungsfrist laeuft.`);
+    } catch (err) {
+      console.error("[gateway] Konnte Member bei Rollenvergabe nicht anlegen:", err);
+    }
+    return;
+  }
+
+  if (hadRole && !hasRole && !hasStaffRole) {
+    try {
+      const member = await prisma.member.findUnique({ where: { discordId: newMember.user.id } });
+      if (!member) return;
+      await revokeAccessAndRole(
+        member,
+        "Die Kunden-Rolle wurde auf Discord entfernt.",
+        "ACCESS_REVOKED_ROLE_REMOVED"
+      );
+      console.log(`[gateway] Kunde-Rolle bei ${newMember.user.username} entfernt - Zugang gesperrt.`);
+    } catch (err) {
+      console.error("[gateway] Konnte Zugang bei Rollenentzug nicht sperren:", err);
+    }
   }
 }
 

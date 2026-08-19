@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { DISCORD_GUILD_ID, grantGuildRole, roleIdsFromEnv } from "@/lib/discord";
 import { generateCustomerNumber } from "@/lib/customerNumber";
+import { startGracePeriodIfNeeded } from "@/lib/accessControl";
 import { TICKET_CATEGORY, closeTicketCore, createTicketCore } from "@/lib/tickets";
 import { MEMBER_STATUS, ROLES, getSubscriptionPlan } from "@/lib/constants";
 
@@ -198,6 +199,10 @@ export async function approveApplicationCore(
   if (DISCORD_GUILD_ID && kundeRoleId) {
     await grantGuildRole(DISCORD_GUILD_ID, application.discordId, kundeRoleId).catch(() => {});
   }
+
+  // Ab jetzt laeuft die 3-Stunden-Zahlungsfrist: ohne Abo-Abschluss wird die
+  // gerade vergebene Rolle automatisch wieder entzogen.
+  await startGracePeriodIfNeeded(member.id).catch(() => {});
 
   await logAction({
     actorId,

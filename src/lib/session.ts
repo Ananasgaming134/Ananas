@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { isStillAuthorized } from "@/lib/accessControl";
 import { hasAtLeastRole, MEMBER_STATUS, type RoleValue } from "@/lib/constants";
 
 export async function getSessionMember() {
@@ -24,6 +25,11 @@ export async function requireAuthenticated() {
 /**
  * Stellt sicher, dass ein aktives Mitglied eingeloggt ist und mindestens die
  * angegebene Rolle besitzt. Leitet ansonsten auf /login bzw. /dashboard um.
+ *
+ * Prueft bei JEDEM Seitenaufruf zusaetzlich live gegen Discord, ob die
+ * Kunden-Rolle noch besteht (kurz gecacht, siehe isStillAuthorized) - ohne
+ * gueltige Rolle kommt niemand weiter, auch nicht mit einer noch gueltigen
+ * Sitzung.
  */
 export async function requireMember(minRole?: RoleValue) {
   const session = await auth();
@@ -33,5 +39,8 @@ export async function requireMember(minRole?: RoleValue) {
 
   const member = await prisma.member.findUnique({ where: { id: session.user.memberId! } });
   if (!member || member.status !== MEMBER_STATUS.ACTIVE) redirect("/login");
+
+  if (!(await isStillAuthorized(member))) redirect("/login?grund=rolle-entzogen");
+
   return member;
 }

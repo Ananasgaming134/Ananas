@@ -88,6 +88,12 @@ model Member {
   lockedById       String?
   lockNoticeSentAt DateTime?
 
+  // Zahlungsfrist nach Vergabe der Kunde-Rolle: wer die Rolle bekommt, muss
+  // innerhalb von KUNDE_GRACE_MS (3 Stunden) ein Abo abschliessen - sonst
+  // entzieht enforceAccessRules() die Discord-Rolle automatisch wieder.
+  // Wird beim Abo-Abschluss geleert (setSubscriptionPlanCore).
+  graceUntil       DateTime?
+
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

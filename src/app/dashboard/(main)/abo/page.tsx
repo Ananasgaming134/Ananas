@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import PlanChangeRequestForm from "@/components/PlanChangeRequestForm";
+import GraceCountdown from "@/components/GraceCountdown";
 import { SUBSCRIPTION_PLANS, formatCoins } from "@/lib/constants";
 
 export default async function AboPage() {
@@ -36,6 +37,17 @@ export default async function AboPage() {
           </div>
         </div>
       </div>
+
+      {member.graceUntil && !member.feePaidUntil && (
+        <div className="fade-up card border-yellow-500/40 bg-yellow-500/10 p-4">
+          <p className="text-sm font-semibold text-yellow-500">⏳ Abo-Frist läuft</p>
+          <p className="mt-1 text-sm text-yellow-500/90">
+            Du hast die Kunden-Rolle bekommen, aber noch kein Abo. Verbleibende Zeit:{" "}
+            <GraceCountdown until={member.graceUntil} />. Läuft sie ab, ohne dass ein Abo
+            abgeschlossen ist, wird die Rolle automatisch wieder entzogen.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
         {SUBSCRIPTION_PLANS.map((plan, i) => {

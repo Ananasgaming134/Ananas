@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { borrowItem, returnLoan } from "@/app/actions/loans";
 import LoanCountdown from "@/components/LoanCountdown";
 import ReborrowCooldown from "@/components/ReborrowCooldown";
+import AvailabilityBadge from "@/components/AvailabilityBadge";
 import { hasAtLeastRole, LOAN_STATUS, REBORROW_COOLDOWN_MS, ROLES } from "@/lib/constants";
 
 export default async function ItemsPage({
@@ -63,6 +64,13 @@ export default async function ItemsPage({
     if (!loan.returnedAt || cooldownEndByItem.has(loan.itemId)) continue;
     cooldownEndByItem.set(loan.itemId, new Date(loan.returnedAt.getTime() + REBORROW_COOLDOWN_MS));
   }
+  // Gesamt-Verfuegbarkeit ueber die gerade angezeigten Items (Stueckzahlen,
+  // nicht Item-Arten) - das ist die Zahl, die man beim Ausleihen wirklich braucht.
+  const totalUnits = items.reduce((sum, i) => sum + i.quantityTotal, 0);
+  const freeUnits = items.reduce(
+    (sum, i) => sum + Math.max(0, i.quantityTotal - (activeCountByItem.get(i.id) ?? 0)),
+    0
+  );
   const isFiltered = Boolean(q || kategorie);
   const isSuspended = Boolean(member.borrowSuspendedUntil && member.borrowSuspendedUntil > now);
   const isPaused = Boolean(member.pausedAt);
@@ -86,12 +94,27 @@ export default async function ItemsPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted">
-          {isFiltered
-            ? `${items.length} von ${totalCount} Item-Arten gefunden.`
-            : `${totalCount} Item-Arten im LeihCenter-Bestand.`}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm text-muted">
+            {isFiltered
+              ? `${items.length} von ${totalCount} Item-Arten gefunden.`
+              : `${totalCount} Item-Arten im LeihCenter-Bestand.`}
+          </p>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+              freeUnits === 0
+                ? "border-danger/40 bg-danger/10 text-danger"
+                : "border-accent-2/40 bg-accent-2/10 text-accent-2"
+            }`}
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${freeUnits === 0 ? "bg-danger" : "bg-accent-2"}`}
+              aria-hidden
+            />
+            {freeUnits} von {totalUnits} Stück sofort verfügbar
+          </span>
+        </div>
         {isOwner && (
           <Link
             href="/dashboard/verwaltung/items"
@@ -177,14 +200,31 @@ export default async function ItemsPage({
         </div>
       ) : (
         <div className="space-y-8">
-          {sortedGroups.map((group) => (
+          {sortedGroups.map((group) => {
+            const groupTotal = group.items.reduce((sum, i) => sum + i.quantityTotal, 0);
+            const groupFree = group.items.reduce(
+              (sum, i) => sum + Math.max(0, i.quantityTotal - (activeCountByItem.get(i.id) ?? 0)),
+              0
+            );
+            return (
             <div key={group.label} className="space-y-4">
-              <h2 className="text-sm font-semibold text-muted">
-                {group.label}
-                <span className="ml-2 text-xs font-normal text-muted/60">
-                  ({group.items.length})
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-semibold text-muted">
+                  {group.label}
+                  <span className="ml-2 text-xs font-normal text-muted/60">
+                    ({group.items.length})
+                  </span>
+                </h2>
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    groupFree === 0
+                      ? "border-danger/40 bg-danger/10 text-danger"
+                      : "border-accent-2/40 bg-accent-2/10 text-accent-2"
+                  }`}
+                >
+                  {groupFree} von {groupTotal} Stück frei
                 </span>
-              </h2>
+              </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {group.items.map((item) => {
                   const borrowedCount = activeCountByItem.get(item.id) ?? 0;
@@ -213,9 +253,9 @@ export default async function ItemsPage({
                       <div className="flex flex-1 flex-col p-4">
                         <div className="flex items-start justify-between gap-2">
                           <h3 className="text-sm font-semibold">{item.name}</h3>
-                          <span className="shrink-0 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-muted">
-                            {available > 0 ? `${available}/${item.quantityTotal} frei` : "verliehen"}
-                          </span>
+                          <div className="shrink-0">
+                            <AvailabilityBadge available={available} total={item.quantityTotal} />
+                          </div>
                         </div>
 
                         <div className="mt-auto pt-4">
@@ -305,7 +345,8 @@ export default async function ItemsPage({
                 })}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

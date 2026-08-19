@@ -15,7 +15,8 @@ import {
 } from "@/lib/discordInteractions";
 
 const MAX_SELECT_OPTIONS = 25; // Discord-Select-Menues erlauben maximal 25 Optionen
-const MAX_DESCRIPTION_LINES = 40; // Embed-Beschreibung soll bei sehr vielen Items nicht ins Uferlose wachsen
+const MAX_EMBED_FIELDS = 25; // Discord-Limit: maximal 25 Felder pro Embed
+const MAX_FIELD_CHARS = 1000; // Discord-Limit pro Feldwert ist 1024 - etwas Puffer lassen
 
 const DISCORD_API = "https://discord.com/api/v10";
 
@@ -24,6 +25,24 @@ function authHeaders() {
     Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
     "Content-Type": "application/json",
   };
+}
+
+/**
+ * Verfuegbarkeit als kompakter Balken - macht auf einen Blick sichtbar, wie
+ * viel von einem Item noch da ist, statt nur "3/5" lesen zu muessen.
+ * Beispiel: 2 von 5 verliehen -> "▰▰▰▱▱".
+ */
+function availabilityBar(available: number, total: number): string {
+  const width = Math.min(total, 5);
+  if (width <= 0) return "";
+  const filled = Math.round((Math.max(0, available) / total) * width);
+  return "▰".repeat(filled) + "▱".repeat(width - filled);
+}
+
+function availabilityIcon(available: number, total: number): string {
+  if (available <= 0) return "🔴";
+  if (available <= total / 2) return "🟡";
+  return "🟢";
 }
 
 async function buildPanelPayload() {
@@ -38,42 +57,100 @@ async function buildPanelPayload() {
   });
   const activeByItem = new Map(activeLoans.map((l) => [l.itemId, l._count.itemId]));
 
-  const allLines = items.map((item) => {
+  // Nach Kategorie gruppiert darstellen (wie auf der Website), damit der
+  // Bestand auch bei vielen Items lesbar bleibt. "Ohne Kategorie" zuletzt.
+  const grouped = new Map<string, { label: string; lines: string[] }>();
+  let totalUnits = 0;
+  let availableUnits = 0;
+
+  for (const item of items) {
     const borrowed = activeByItem.get(item.id) ?? 0;
-    const available = item.quantityTotal - borrowed;
-    const icon = available > 0 ? "🟢" : "🔴";
-    return `${icon} **${item.name}** — ${available}/${item.quantityTotal} frei`;
+    const available = Math.max(0, item.quantityTotal - borrowed);
+    totalUnits += item.quantityTotal;
+    availableUnits += available;
+
+    const key = item.category?.id ?? "__none";
+    const label = item.category?.name ?? "Ohne Kategorie";
+    if (!grouped.has(key)) grouped.set(key, { label, lines: [] });
+    grouped.get(key)!.lines.push(
+      `${availabilityIcon(available, item.quantityTotal)} **${item.name}** \`${availabilityBar(available, item.quantityTotal)}\` ${available}/${item.quantityTotal}`
+    );
+  }
+
+  const sortedGroups = [...grouped.values()].sort((a, b) => {
+    if (a.label === "Ohne Kategorie") return 1;
+    if (b.label === "Ohne Kategorie") return -1;
+    return a.label.localeCompare(b.label, "de");
   });
-  const lines = allLines.slice(0, MAX_DESCRIPTION_LINES);
-  if (allLines.length > MAX_DESCRIPTION_LINES) {
-    lines.push(`… und ${allLines.length - MAX_DESCRIPTION_LINES} weitere.`);
+
+  // Discord erlaubt maximal 25 Embed-Felder und 1024 Zeichen pro Feld -
+  // deshalb pro Kategorie ein Feld und bei Ueberlauf sauber abschneiden,
+  // statt die Nachricht von Discord ablehnen zu lassen.
+  const fields: { name: string; value: string; inline: boolean }[] = [];
+  let hiddenItems = 0;
+
+  for (const group of sortedGroups) {
+    if (fields.length >= MAX_EMBED_FIELDS) {
+      hiddenItems += group.lines.length;
+      continue;
+    }
+    let value = "";
+    let shown = 0;
+    for (const line of group.lines) {
+      if (value.length + line.length + 1 > MAX_FIELD_CHARS) break;
+      value += (value ? "\n" : "") + line;
+      shown += 1;
+    }
+    hiddenItems += group.lines.length - shown;
+    fields.push({
+      name: `${group.label} · ${group.lines.length}`,
+      value: value || "—",
+      inline: false,
+    });
   }
 
   const description =
-    lines.length > 0
-      ? lines.join("\n")
-      : "Aktuell sind keine Items hinterlegt.";
+    items.length === 0
+      ? "Aktuell sind keine Items hinterlegt."
+      : [
+          `**${availableUnits}** von **${totalUnits}** Stück sofort verfügbar` +
+            `  \`${availabilityBar(availableUnits, Math.max(totalUnits, 1))}\``,
+          `${items.length} Item-Art(en) in ${sortedGroups.length} Kategorie(n)`,
+          "",
+          "🟢 frei · 🟡 fast vergriffen · 🔴 komplett verliehen",
+        ].join("\n");
 
   const embed = {
-    title: `📦 ${SITE_NAME} — Item-Übersicht`,
+    title: `📦 ${SITE_NAME} — Ausleihe`,
     description,
     color: 0xf2b544,
-    footer: { text: "Wähle unten aus, um ein Item auszuleihen oder zurückzugeben." },
+    fields: items.length > 0 ? fields : undefined,
+    footer: {
+      text:
+        hiddenItems > 0
+          ? `… und ${hiddenItems} weitere — über „Item suchen“ oder die Kategorie-Auswahl erreichbar.`
+          : "Kategorie wählen oder suchen, um auszuleihen bzw. zurückzugeben.",
+    },
     timestamp: new Date().toISOString(),
   };
 
-  // Kategorien mit mindestens einem Item ermitteln, plus Anzahl unkategorisierter Items.
-  const categoryCounts = new Map<string, { name: string; count: number }>();
+  // Kategorien mit mindestens einem Item ermitteln, plus Anzahl unkategorisierter
+  // Items - jeweils inklusive der aktuell freien Stueckzahl fuer die Auswahl.
+  const categoryCounts = new Map<string, { name: string; count: number; free: number }>();
   let uncategorizedCount = 0;
+  let uncategorizedFree = 0;
   for (const item of items) {
+    const free = Math.max(0, item.quantityTotal - (activeByItem.get(item.id) ?? 0));
     if (item.category) {
       const existing = categoryCounts.get(item.category.id);
       categoryCounts.set(item.category.id, {
         name: item.category.name,
         count: (existing?.count ?? 0) + 1,
+        free: (existing?.free ?? 0) + free,
       });
     } else {
       uncategorizedCount++;
+      uncategorizedFree += free;
     }
   }
   const categoryBuckets = categoryCounts.size + (uncategorizedCount > 0 ? 1 : 0);
@@ -96,11 +173,14 @@ async function buildPanelPayload() {
             type: 3,
             custom_id: PANEL_SELECT_ID,
             placeholder: "Item auswählen...",
-            options: items.slice(0, MAX_SELECT_OPTIONS).map((item) => ({
-              label: item.name.slice(0, 100),
-              value: item.id,
-              description: item.category?.name.slice(0, 100),
-            })),
+            options: items.slice(0, MAX_SELECT_OPTIONS).map((item) => {
+              const free = Math.max(0, item.quantityTotal - (activeByItem.get(item.id) ?? 0));
+              return {
+                label: `${availabilityIcon(free, item.quantityTotal)} ${item.name}`.slice(0, 100),
+                value: item.id,
+                description: `${item.category?.name ?? "Ohne Kategorie"} · ${free}/${item.quantityTotal} frei`.slice(0, 100),
+              };
+            }),
           },
         ],
       },
@@ -108,16 +188,16 @@ async function buildPanelPayload() {
   } else {
     const categoryOptions = [...categoryCounts.entries()]
       .sort((a, b) => a[1].name.localeCompare(b[1].name, "de"))
-      .map(([id, { name, count }]) => ({
+      .map(([id, { name, count, free }]) => ({
         label: name.slice(0, 100),
         value: id,
-        description: `${count} Item(s)`,
+        description: `${count} Item-Art(en) · ${free} Stück frei`.slice(0, 100),
       }));
     if (uncategorizedCount > 0) {
       categoryOptions.push({
         label: "Ohne Kategorie",
         value: NO_CATEGORY_VALUE,
-        description: `${uncategorizedCount} Item(s)`,
+        description: `${uncategorizedCount} Item-Art(en) · ${uncategorizedFree} Stück frei`.slice(0, 100),
       });
     }
 
@@ -195,11 +275,11 @@ export async function buildCategoryItemSelectPayload(categoryValue: string, page
           placeholder: "Item auswählen...",
           options: items.map((item) => {
             const borrowed = activeByItem.get(item.id) ?? 0;
-            const available = item.quantityTotal - borrowed;
+            const available = Math.max(0, item.quantityTotal - borrowed);
             return {
-              label: item.name.slice(0, 100),
+              label: `${availabilityIcon(available, item.quantityTotal)} ${item.name}`.slice(0, 100),
               value: item.id,
-              description: `${available}/${item.quantityTotal} frei`,
+              description: `${availabilityBar(available, item.quantityTotal)}  ${available} von ${item.quantityTotal} frei`.slice(0, 100),
             };
           }),
         },
@@ -289,9 +369,9 @@ export async function buildItemSearchResultPayload(query: string, page = 0) {
           placeholder: "Item auswählen...",
           options: items.map((item) => {
             const borrowed = activeByItem.get(item.id) ?? 0;
-            const available = item.quantityTotal - borrowed;
+            const available = Math.max(0, item.quantityTotal - borrowed);
             return {
-              label: item.name.slice(0, 100),
+              label: `${availabilityIcon(available, item.quantityTotal)} ${item.name}`.slice(0, 100),
               value: item.id,
               description: `${item.category?.name ?? "Ohne Kategorie"} · ${available}/${item.quantityTotal} frei`.slice(0, 100),
             };
@@ -350,16 +430,44 @@ async function buildStatusPanelPayload() {
     orderBy: { borrowedAt: "asc" },
   });
 
+  const now = Date.now();
   const lines = activeLoans.map((loan) => {
-    const unixSeconds = Math.floor(loan.borrowedAt.getTime() / 1000);
-    return `📦 **${loan.item.name}** — ${loan.member.displayName} · seit <t:${unixSeconds}:R>`;
+    const borrowedUnix = Math.floor(loan.borrowedAt.getTime() / 1000);
+    // Discord rendert <t:unix:R> live mit ("in 20 Minuten" / "vor 5 Minuten") -
+    // dadurch bleibt die Frist aktuell, ohne die Nachricht dauernd zu editieren.
+    if (!loan.dueAt) {
+      return `📦 **${loan.item.name}**\n└ ${loan.member.displayName} · seit <t:${borrowedUnix}:R>`;
+    }
+    const dueUnix = Math.floor(loan.dueAt.getTime() / 1000);
+    const overdue = loan.dueAt.getTime() < now;
+    const marker = overdue ? "🔴 **überfällig**" : "🟢 zurück";
+    return `📦 **${loan.item.name}**\n└ ${loan.member.displayName} · seit <t:${borrowedUnix}:R> · ${marker} <t:${dueUnix}:R>`;
   });
+
+  const overdueCount = activeLoans.filter((l) => l.dueAt && l.dueAt.getTime() < now).length;
+
+  // Bei sehr vielen gleichzeitigen Ausleihen nicht ins Zeichenlimit laufen
+  // (Embed-Beschreibung: 4096 Zeichen).
+  const shown: string[] = [];
+  let length = 0;
+  for (const line of lines) {
+    if (length + line.length + 1 > 3800) break;
+    shown.push(line);
+    length += line.length + 1;
+  }
+  const hidden = lines.length - shown.length;
+  if (hidden > 0) shown.push(`\n… und ${hidden} weitere.`);
 
   const embed = {
     title: `📋 ${SITE_NAME} — Aktuell ausgeliehen`,
-    description: lines.length > 0 ? lines.join("\n") : "Aktuell ist nichts ausgeliehen.",
-    color: 0x3ddc97,
-    footer: { text: `${activeLoans.length} aktive Ausleihe(n)` },
+    description: shown.length > 0 ? shown.join("\n") : "Aktuell ist nichts ausgeliehen. Alles zurück im Regal. ✨",
+    color: overdueCount > 0 ? 0xf2545b : 0x3ddc97,
+    footer: {
+      text:
+        overdueCount > 0
+          ? `${activeLoans.length} aktive Ausleihe(n) · ${overdueCount} überfällig`
+          : `${activeLoans.length} aktive Ausleihe(n)`,
+    },
     timestamp: new Date().toISOString(),
   };
 
