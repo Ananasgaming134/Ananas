@@ -98,7 +98,6 @@ export default async function VerwaltungPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Kontrollraum"
         title="Verwaltung"
         description="Interner Bereich für Aufsicht/Owner – nicht für Kunden sichtbar."
       />

@@ -29,7 +29,6 @@ export default async function BewerbungenPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Bewerbungen"
         description="Offene Kunden-Bewerbungen prüfen. Annehmen legt sofort die Akte an, vergibt die Kunde-Rolle in Discord und macht die Zahlung fällig. Nur der Owner darf final entscheiden."
       />

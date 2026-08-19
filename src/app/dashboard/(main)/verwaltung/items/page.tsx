@@ -54,7 +54,6 @@ export default async function VerwaltenPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Items verwalten"
         description={
           <>

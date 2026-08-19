@@ -24,7 +24,7 @@ export default async function ItemBearbeitenPage({
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <PageHeader eyebrow="Verwaltung" title="Item bearbeiten" description={item.name} />
+      <PageHeader title="Item bearbeiten" description={item.name} />
       <ItemForm
         action={boundAction}
         initial={item}

@@ -39,7 +39,6 @@ export default async function VerwaltungTicketsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Tickets"
         description="Der Verlauf läuft in einem privaten Discord-Thread. Hier siehst du Status, übernimmst Tickets und liest geschlossene Verläufe nach."
       />

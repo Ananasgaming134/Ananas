@@ -30,7 +30,6 @@ export default async function LogsPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Audit-Log"
         description={<>Vollständiges Protokoll aller Bearbeitungen im LeihCenter ({total} Einträge).</>}
       />

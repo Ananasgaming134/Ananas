@@ -16,7 +16,6 @@ export default async function KategorienPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Kategorien"
         description="Zum Einsortieren und Filtern der Items. Nur für Owner sichtbar."
         action={

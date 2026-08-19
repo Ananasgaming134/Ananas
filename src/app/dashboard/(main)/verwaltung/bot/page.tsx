@@ -24,7 +24,6 @@ export default async function BotVerwaltenPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Discord-Server & Ausleih-Panel"
         description="Hier legst du fest, auf welchen Discord-Servern der Bot ein sich selbst aktualisierendes Item-Panel pflegt, in welchem Kanal, und welche Rolle dort ausleihen darf."
       />

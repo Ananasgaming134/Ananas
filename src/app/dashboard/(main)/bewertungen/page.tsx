@@ -27,16 +27,9 @@ export default async function BewertungenPage() {
 
   return (
     <div className="space-y-6">
-      <div className="fade-up">
-        <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted/70">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
-          Feedback
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Bewertungen</h1>
-        <p className="mt-2 text-sm text-muted">
-          Wie zufrieden bist du mit dem LeihCenter? Deine Bewertung hilft uns, besser zu werden.
-        </p>
-      </div>
+      <p className="fade-up text-sm text-muted">
+        Wie zufrieden bist du mit dem LeihCenter? Deine Bewertung hilft uns, besser zu werden.
+      </p>
 
       <div className="fade-up card-glass grid grid-cols-1 gap-6 p-6 sm:grid-cols-[auto_1fr]">
         <div className="text-center sm:text-left">

@@ -33,7 +33,6 @@ export default async function ZahlungenPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Zahlungen"
         description={
           <>

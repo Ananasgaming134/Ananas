@@ -19,7 +19,6 @@ export default async function StatistikPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Statistik"
         description="Auswertung aller Ausleihen – was wird am meisten genutzt, wer leiht am meisten aus."
       />

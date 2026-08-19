@@ -79,7 +79,6 @@ export default async function KundenPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Kunden"
         description={
           query ? `${visibleCount} von ${totalCount} Kunden gefunden.` : `${totalCount} Kunden insgesamt.`

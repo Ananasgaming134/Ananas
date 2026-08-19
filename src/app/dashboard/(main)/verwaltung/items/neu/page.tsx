@@ -12,7 +12,6 @@ export default async function NeuesItemPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Neues Item anlegen"
         description="Wähle idealerweise das passende Item von opsucht.net und hinterlege Bild sowie Durchschnittspreis."
       />

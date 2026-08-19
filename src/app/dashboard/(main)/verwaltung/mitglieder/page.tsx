@@ -32,7 +32,6 @@ export default async function MitgliederPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Mitglieder-Archiv"
         description={
           <>
