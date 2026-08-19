@@ -2,7 +2,8 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import PageHeader from "@/components/PageHeader";
 import { approveApplication, blockApplicant, rejectApplication, unblockApplicant } from "@/app/actions/applications";
-import { approvePlanChange, rejectPlanChange } from "@/app/actions/planChanges";
+import { rejectPlanChange } from "@/app/actions/planChanges";
+import PlanChangeApproveForm from "@/components/PlanChangeApproveForm";
 import { ROLES, SUBSCRIPTION_PLANS, formatCoins } from "@/lib/constants";
 
 export default async function BewerbungenPage() {
@@ -165,24 +166,29 @@ export default async function BewerbungenPage() {
             {planChangeRequests.map((req) => {
               const plan = SUBSCRIPTION_PLANS.find((p) => p.id === req.requestedPlanId);
               const currentPlan = SUBSCRIPTION_PLANS.find((p) => p.id === req.member.subscriptionPlan);
+              const affordable = plan ? req.member.balance >= plan.price : false;
               return (
-                <div key={req.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
-                  <div>
+                <div key={req.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-3 text-sm">
+                  <div className="min-w-0">
                     <p className="font-medium">{req.member.displayName}</p>
                     <p className="text-xs text-muted">
                       {currentPlan?.label ?? "kein Paket"} → <span className="text-foreground">{plan?.label ?? req.requestedPlanId}</span>{" "}
                       &middot; {req.createdAt.toLocaleDateString("de-DE")}
                     </p>
+                    <span
+                      className={`mt-1 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                        affordable
+                          ? "border-accent-2/40 bg-accent-2/10 text-accent-2"
+                          : "border-danger/40 bg-danger/10 text-danger"
+                      }`}
+                    >
+                      💰 {formatCoins(req.member.balance)}
+                      {plan && ` / ${formatCoins(plan.price)}`}
+                      {affordable ? " ✓" : " — reicht nicht"}
+                    </span>
                   </div>
                   <div className="flex gap-2">
-                    <form action={approvePlanChange.bind(null, req.id)}>
-                      <button
-                        type="submit"
-                        className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-black transition hover:brightness-110"
-                      >
-                        Genehmigen
-                      </button>
-                    </form>
+                    <PlanChangeApproveForm requestId={req.id} />
                     <form action={rejectPlanChange.bind(null, req.id)}>
                       <button
                         type="submit"

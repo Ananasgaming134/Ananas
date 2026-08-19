@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { requestPlanChange } from "@/app/actions/planChanges";
+import PlanChangeRequestForm from "@/components/PlanChangeRequestForm";
 import { SUBSCRIPTION_PLANS, formatCoins } from "@/lib/constants";
 
 export default async function AboPage() {
@@ -136,26 +136,13 @@ export default async function AboPage() {
               <p className="text-sm text-muted">
                 Möchtest du ein anderes Paket? Der Wechsel muss vom Owner genehmigt werden und gilt
                 dann ab deiner nächsten Verlängerung — deine aktuelle Laufzeit bleibt unangetastet.
+                Du brauchst dafür bereits genug Guthaben für das neue Paket.
               </p>
-              <form action={requestPlanChange} className="flex flex-wrap items-center gap-2">
-                <select
-                  name="requestedPlanId"
-                  defaultValue={SUBSCRIPTION_PLANS.find((p) => p.id !== member.subscriptionPlan)?.id}
-                  className="rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none ring-accent/40 focus:ring-2"
-                >
-                  {SUBSCRIPTION_PLANS.map((plan) => (
-                    <option key={plan.id} value={plan.id} disabled={plan.id === member.subscriptionPlan}>
-                      {plan.label} {plan.id === member.subscriptionPlan ? "(aktuell)" : ""}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="submit"
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium transition hover:bg-surface-2"
-                >
-                  Wechsel beantragen
-                </button>
-              </form>
+              <PlanChangeRequestForm
+                plans={SUBSCRIPTION_PLANS}
+                currentPlanId={member.subscriptionPlan}
+                balance={member.balance}
+              />
             </>
           )}
         </div>
