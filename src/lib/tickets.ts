@@ -122,12 +122,12 @@ async function provisionTicketChannel(
   // Nachrichten posten lassen, der Rest des Codes bleibt gleich.
   let channelId: string | null = null;
 
-  if (deployment.ticketPanelChannelId) {
-    const thread = await createTicketThread(
-      deployment.ticketPanelChannelId,
-      channelName,
-      ticket.applicantDiscordId
-    );
+  // Eltern-Kanal fuer den Thread: bevorzugt der Ticket-Panel-Kanal (dort hat
+  // die Person das Ticket geoeffnet), ersatzweise der Ausleih-Panel-Kanal -
+  // beide sind fuer Kunden sichtbar, was Discord fuer Thread-Zugriff braucht.
+  const threadParentId = deployment.ticketPanelChannelId ?? deployment.channelId;
+  if (threadParentId) {
+    const thread = await createTicketThread(threadParentId, channelName, ticket.applicantDiscordId);
     if (thread.ok) channelId = thread.threadId;
   }
 
