@@ -59,11 +59,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Gebannte Mitglieder kommen unter keinen Umständen mehr rein.
       if (existing?.status === MEMBER_STATUS.BANNED) return false;
 
-      // Wer auf der roten Liste steht (endgültig abgelehnte Bewerbung), kommt
-      // ebenfalls nicht rein - unabhängig davon, ob je ein Member-Datensatz
-      // existiert hat.
+      // Wer dauerhaft auf der roten Liste steht, kommt ebenfalls nicht rein -
+      // unabhängig davon, ob je ein Member-Datensatz existiert hat. Eine bloß
+      // befristete Aufnahmesperre (expiresAt gesetzt) sperrt dagegen nur die
+      // Bewerbung, nicht den Login.
       const blocked = await prisma.applicationBlock.findUnique({ where: { discordId } });
-      if (blocked) return false;
+      if (blocked && !blocked.expiresAt) return false;
 
       // Ohne aktuell gültige LeihCenter-Rolle in Discord UND ohne bereits
       // archiviertes aktives Mitglied gibt es keinen Zugriff auf den

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import PageHeader from "@/components/PageHeader";
 import { ROLES } from "@/lib/constants";
 
 const PAGE_SIZE = 50;
@@ -28,12 +29,11 @@ export default async function LogsPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Audit-Log</h1>
-        <p className="mt-1 text-sm text-muted">
-          Vollständiges Protokoll aller Bearbeitungen im LeihCenter ({total} Einträge).
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Verwaltung"
+        title="Audit-Log"
+        description={<>Vollständiges Protokoll aller Bearbeitungen im LeihCenter ({total} Einträge).</>}
+      />
 
       <div className="card overflow-hidden">
         <table className="w-full text-left text-sm">

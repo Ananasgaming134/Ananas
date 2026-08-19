@@ -3,6 +3,7 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import StatusBadge from "@/components/StatusBadge";
 import StatCard from "@/components/StatCard";
+import PageHeader from "@/components/PageHeader";
 import { activateDiscordMember } from "@/app/actions/members";
 import { fetchGuildMembersWithRole, roleIdsFromEnv } from "@/lib/discord";
 import { getSubscriptionPlan, LOAN_STATUS, MEMBER_STATUS, ROLES } from "@/lib/constants";
@@ -77,21 +78,23 @@ export default async function KundenPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Kunden</h1>
-        <p className="mt-1 text-sm text-muted">
-          {query ? `${visibleCount} von ${totalCount} Kunden gefunden.` : `${totalCount} Kunden insgesamt.`}
+      <PageHeader
+        eyebrow="Verwaltung"
+        title="Kunden"
+        description={
+          query ? `${visibleCount} von ${totalCount} Kunden gefunden.` : `${totalCount} Kunden insgesamt.`
+        }
+      />
+
+      {discordOnlyFetchFailed && (
+        <p className="text-xs text-yellow-500">
+          Konnte nicht alle Discord-Mitglieder mit der Kunde-Rolle abrufen &ndash;
+          es werden nur bereits eingeloggte Kunden angezeigt. Dafür muss im
+          Discord Developer Portal bei der Bot-App unter &bdquo;Privileged
+          Gateway Intents&ldquo; das &bdquo;Server Members Intent&ldquo;
+          aktiviert werden.
         </p>
-        {discordOnlyFetchFailed && (
-          <p className="mt-2 text-xs text-yellow-500">
-            Konnte nicht alle Discord-Mitglieder mit der Kunde-Rolle abrufen &ndash;
-            es werden nur bereits eingeloggte Kunden angezeigt. Dafür muss im
-            Discord Developer Portal bei der Bot-App unter &bdquo;Privileged
-            Gateway Intents&ldquo; das &bdquo;Server Members Intent&ldquo;
-            aktiviert werden.
-          </p>
-        )}
-      </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <StatCard label="Kunden insgesamt" value={String(totalCount)} />

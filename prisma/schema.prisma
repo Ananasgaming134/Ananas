@@ -62,6 +62,14 @@ model Member {
   age            Int?
   playHours      Int?
 
+  // Verifizierung des Minecraft-Accounts (siehe src/lib/verification.ts):
+  // minecraftUuid kommt aus der Mojang-API und bleibt bei Namensaenderungen
+  // gleich - dadurch faellt eine Umbenennung beim Abgleich automatisch auf.
+  // Ohne verifiedAt darf ein Kunde nichts ausleihen.
+  minecraftUuid  String?
+  verifiedAt     DateTime?
+  verifiedById   String?
+
   // Guthaben in $ (1 ₵ = 1 $): Business-Card-Zahlungen werden hier
   // gutgeschrieben (siehe creditPaymentToBalance in src/lib/payments.ts),
   // nicht direkt einem Abo zugeordnet. Owner "buchen" davon ein Abo-Paket ab
@@ -90,9 +98,41 @@ model Member {
   auditAsActor   AuditLog[]   @relation("AuditActor")
   auditAsTarget  AuditLog[]   @relation("AuditTarget")
   payments       Payment[]
+  sanctions      Sanction[]   @relation("SanctionsAboutMember")
+  sanctionsIssued Sanction[]  @relation("SanctionsByIssuer")
+  review         Review?
 
   @@index([status])
   @@index([role])
+}
+
+// Eingetragene Sanktion gegen ein Mitglied (Verwarnung wegen ueberschrittener
+// Leihdauer, zu vieler Items etc.). Rein dokumentarisch - die technische
+// Durchsetzung (Ausleih-Sperre, Bann) laeuft weiterhin ueber die Felder am
+// Member selbst; hier steht der nachvollziehbare Verlauf.
+model Sanction {
+  id         String   @id @default(cuid())
+  memberId   String
+  member     Member   @relation("SanctionsAboutMember", fields: [memberId], references: [id], onDelete: Cascade)
+  type       String   // VERWARNUNG | AUSLEIHSPERRE | SONSTIGES
+  reason     String
+  issuedById String?
+  issuedBy   Member?  @relation("SanctionsByIssuer", fields: [issuedById], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@index([memberId])
+}
+
+// Kundenbewertung des LeihCenters - eine pro Mitglied, jederzeit
+// ueberschreibbar (deshalb memberId eindeutig statt einer Historie).
+model Review {
+  id        String   @id @default(cuid())
+  memberId  String   @unique
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  rating    Int      // 1-5 Sterne
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Erkannte Zahlungen aus dem Discord-Zahlungskanal (Business-Card-System
@@ -326,14 +366,17 @@ model MembershipApplicationItem {
   quantity      Int     @default(1)
 }
 
-// Wer hier per discordId eingetragen ist, kann sich nie wieder bewerben -
-// unabhaengig davon, ob ueberhaupt je ein Member-Datensatz existiert hat.
+// Wer hier per discordId eingetragen ist, kann sich nicht bewerben.
+// expiresAt = null bedeutet dauerhafte Sperre (rote Liste); mit Datum ist es
+// eine befristete Aufnahmesperre - danach ist eine erneute Bewerbung wieder
+// moeglich, ohne dass der Eintrag manuell geloescht werden muss.
 model ApplicationBlock {
   id          String   @id @default(cuid())
   discordId   String   @unique
   reason      String
   blockedById String?
   blockedAt   DateTime @default(now())
+  expiresAt   DateTime?
 }
 
 // Support- oder Bewerbungs-Ticket. Der eigentliche Verlauf findet in einem
@@ -361,6 +404,11 @@ model Ticket {
   // Nachricht in der Claim-Warteschlange (BotDeployment.ticketQueueChannelId)
   // - wird beim Claim/Close editiert (Button entfernt, "von X uebernommen").
   queueMessageId     String?
+
+  // Beim Schliessen aus dem Discord-Thread gesicherter Gespraechsverlauf -
+  // dient als Nachweis, falls spaeter strittig ist, was zugesagt wurde.
+  // Threads koennen archiviert/geloescht werden, die Kopie hier bleibt.
+  transcript         String?
 
   createdAt          DateTime  @default(now())
 

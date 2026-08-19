@@ -11,7 +11,7 @@ import {
 } from "@/lib/discordPanel";
 import { RENEW_PREFIX, setSubscriptionPlanCore } from "@/lib/subscriptions";
 import { applyAndOpenTicketCore } from "@/lib/applications";
-import { grantChannelMemberAccess } from "@/lib/discord";
+import { addThreadMember, grantChannelMemberAccess } from "@/lib/discord";
 import {
   TICKET_CATEGORY,
   canManageTicket,
@@ -25,6 +25,7 @@ import {
   BORROW_PREFIX,
   CATEGORY_ITEM_SELECT_ID,
   CATEGORY_PAGE_PREFIX,
+  FORCE_RETURN_PREFIX,
   ITEM_SEARCH_MODAL_ID,
   ITEM_SEARCH_PAGE_PREFIX,
   ITEM_SEARCH_SELECT_ID,
@@ -48,7 +49,9 @@ import {
   type DiscordInteractionUser,
 } from "@/lib/discordInteractions";
 import { resetWordChain } from "@/lib/wordChain";
-import { LOAN_CHANNEL, LOAN_STATUS, MEMBER_STATUS, SUBSCRIPTION_PLANS } from "@/lib/constants";
+import { getGeneralStats, getPersonalStats, rankedToLines } from "@/lib/stats";
+import { verifyMemberCore } from "@/lib/verification";
+import { LOAN_CHANNEL, LOAN_STATUS, MEMBER_STATUS, SITE_NAME, SUBSCRIPTION_PLANS } from "@/lib/constants";
 
 const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY ?? "";
 const EPHEMERAL = 64;
@@ -137,6 +140,28 @@ async function handleCommand(interaction: DiscordInteractionPayload) {
 
   if (commandName === "ticket") {
     return handleTicketAddCommand(interaction, invokerRoles);
+  }
+
+  if (commandName === "statistik") {
+    const discordUser = interaction.member?.user ?? interaction.user;
+    if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
+    const sub = interaction.data?.options?.[0]?.name ?? "allgemein";
+    return sub === "meine" ? handlePersonalStatsCommand(discordUser) : handleGeneralStatsCommand();
+  }
+
+  if (commandName === "verifizieren") {
+    const discordUser = interaction.member?.user ?? interaction.user;
+    if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
+    const name = interaction.data?.options?.find((o) => o.name === "minecraft-name")?.value;
+    if (!name) return ephemeral("Bitte deinen Minecraft-Namen angeben.");
+    return handleVerifyCommand(discordUser, String(name));
+  }
+
+  if (commandName === "ausleihen") {
+    if (!hasStaffRole(invokerRoles)) {
+      return ephemeral("Nur Aufsichtspersonen und Owner können alle Ausleihen einsehen.");
+    }
+    return handleAllLoansCommand();
   }
 
   if (commandName !== "akte") {
@@ -370,6 +395,11 @@ async function handleComponent(interaction: DiscordInteractionPayload) {
   if (customId.startsWith(BORROW_PREFIX)) {
     const itemId = customId.slice(BORROW_PREFIX.length);
     return handleBorrow(itemId, interaction.guild_id, memberRoles, discordUser);
+  }
+
+  if (customId.startsWith(FORCE_RETURN_PREFIX)) {
+    const loanId = customId.slice(FORCE_RETURN_PREFIX.length);
+    return handleForceReturn(loanId, memberRoles, discordUser);
   }
 
   if (customId.startsWith(RETURN_PREFIX)) {
@@ -757,8 +787,12 @@ async function handleTicketAddCommand(interaction: DiscordInteractionPayload, in
   if (!targetDiscordId) return ephemeral("Bitte eine Person angeben.");
   if (!ticket.discordChannelId) return ephemeral("Für dieses Ticket existiert kein Discord-Kanal.");
 
-  const result = await grantChannelMemberAccess(ticket.discordChannelId, targetDiscordId);
-  if (!result.ok) return ephemeral(`❌ ${result.error}`);
+  // Tickets laufen als Thread (dort zaehlt die Thread-Mitgliedschaft) oder als
+  // eigener Kanal (dort die Kanal-Berechtigung) - beides versuchen, es muss
+  // nur eines davon greifen.
+  const asThread = await addThreadMember(ticket.discordChannelId, targetDiscordId);
+  const asChannel = await grantChannelMemberAccess(ticket.discordChannelId, targetDiscordId);
+  if (!asThread.ok && !asChannel.ok) return ephemeral(`❌ ${asChannel.error}`);
 
   await logAction({
     actorId: actor?.id ?? null,
@@ -944,4 +978,155 @@ async function handleReturn(loanId: string, discordUser: DiscordInteractionUser)
   return ephemeral(
     `✅ **${result.itemName}** zurückgegeben. Danke!\nDu kannst es ab <t:${unixSeconds}:R> wieder ausleihen.`
   );
+}
+
+/** "/verifizieren <name>" - prueft den Namen bei Mojang und speichert die UUID. */
+async function handleVerifyCommand(discordUser: DiscordInteractionUser, minecraftName: string) {
+  const member = await ensureMemberFromDiscordUser(discordUser);
+  const result = await verifyMemberCore(member.id, minecraftName, member.id);
+
+  return ephemeral(
+    result.ok
+      ? `✅ Verifiziert als **${result.minecraftName}**. Du kannst jetzt ausleihen.`
+      : `❌ ${result.error}`
+  );
+}
+
+/** "/statistik allgemein" - dieselben Zahlen wie die Statistik-Seite der Website. */
+async function handleGeneralStatsCommand() {
+  const stats = await getGeneralStats();
+
+  return Response.json({
+    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+    data: {
+      flags: EPHEMERAL,
+      embeds: [
+        {
+          title: `📊 ${SITE_NAME} — Statistik`,
+          color: 0xf2b544,
+          fields: [
+            { name: "🔥 Die gefragtesten Items", value: rankedToLines(stats.topItems) },
+            { name: "🏷️ Die gefragtesten Kategorien", value: rankedToLines(stats.topCategories) },
+            {
+              name: "📡 Überblick",
+              value:
+                `Ausleihen insgesamt: **${stats.totalLoans}**\n` +
+                `Aktuell ausgeliehen: **${stats.activeLoans}**\n` +
+                `Items im Bestand: **${stats.itemCount}** in ${stats.categoryCount} Kategorien\n` +
+                `Über Website: **${stats.webLoans}** · über Discord: **${stats.discordLoans}**`,
+            },
+          ],
+          footer: { text: "Mehr Details auf der Website unter „Statistik“." },
+        },
+      ],
+    },
+  });
+}
+
+/** "/statistik meine" - nur die eigenen Zahlen der aufrufenden Person. */
+async function handlePersonalStatsCommand(discordUser: DiscordInteractionUser) {
+  const member = await prisma.member.findUnique({ where: { discordId: discordUser.id } });
+  if (!member) return ephemeral("Für dich ist noch kein Konto hinterlegt.");
+
+  const stats = await getPersonalStats(member.id);
+  if (stats.totalLoans === 0) return ephemeral("Du hast bisher noch nichts ausgeliehen.");
+
+  return Response.json({
+    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+    data: {
+      flags: EPHEMERAL,
+      embeds: [
+        {
+          title: `📊 Deine Statistik — ${member.displayName}`,
+          color: 0x3ddc97,
+          fields: [
+            { name: "⭐ Deine Lieblings-Items", value: rankedToLines(stats.topItems) },
+            { name: "📂 Deine Lieblings-Kategorien", value: rankedToLines(stats.topCategories) },
+            {
+              name: "📦 Überblick",
+              value:
+                `Ausleihen insgesamt: **${stats.totalLoans}**\n` +
+                `Aktuell bei dir: **${stats.activeLoans}**` +
+                (stats.firstLoanAt
+                  ? `\nErste Ausleihe: <t:${Math.floor(stats.firstLoanAt.getTime() / 1000)}:D>`
+                  : ""),
+            },
+          ],
+        },
+      ],
+    },
+  });
+}
+
+/**
+ * "/ausleihen" (Aufsicht/Owner) - listet alle aktiven Ausleihen mit einem
+ * Ausbuchen-Button je Eintrag, fuer den Fall dass jemand ein Item abgegeben,
+ * aber vergessen hat es selbst zurueckzugeben.
+ */
+async function handleAllLoansCommand() {
+  const loans = await prisma.loan.findMany({
+    where: { status: LOAN_STATUS.ACTIVE },
+    include: { item: true, member: true },
+    orderBy: { borrowedAt: "asc" },
+    take: 20,
+  });
+
+  if (loans.length === 0) return ephemeral("Aktuell ist nichts ausgeliehen.");
+
+  const description = loans
+    .map((loan) => {
+      const since = Math.floor(loan.borrowedAt.getTime() / 1000);
+      const due = loan.dueAt ? ` · fällig <t:${Math.floor(loan.dueAt.getTime() / 1000)}:R>` : "";
+      return `📦 **${loan.item.name}** — ${loan.member.displayName} · seit <t:${since}:R>${due}`;
+    })
+    .join("\n");
+
+  // Discord erlaubt maximal 5 Action-Rows mit je 5 Buttons.
+  const components = [];
+  for (let i = 0; i < Math.min(loans.length, 25); i += 5) {
+    components.push({
+      type: 1,
+      components: loans.slice(i, i + 5).map((loan) => ({
+        type: 2,
+        style: 2,
+        label: `Ausbuchen: ${loan.item.name}`.slice(0, 80),
+        custom_id: `${FORCE_RETURN_PREFIX}${loan.id}`,
+      })),
+    });
+    if (components.length === 5) break;
+  }
+
+  return Response.json({
+    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+    data: {
+      flags: EPHEMERAL,
+      embeds: [
+        {
+          title: `📋 ${SITE_NAME} — Alle aktiven Ausleihen`,
+          description,
+          color: 0x5b8cff,
+          footer: { text: `${loans.length} aktive Ausleihe(n)` },
+        },
+      ],
+      components,
+    },
+  });
+}
+
+/** Ausbuchen einer FREMDEN Ausleihe durch Aufsicht/Owner. */
+async function handleForceReturn(
+  loanId: string,
+  memberRoles: string[],
+  discordUser: DiscordInteractionUser
+) {
+  if (!hasStaffRole(memberRoles)) {
+    return ephemeral("Nur Aufsichtspersonen und Owner können fremde Ausleihen ausbuchen.");
+  }
+
+  const actor = await ensureMemberFromDiscordUser(discordUser);
+  const result = await returnLoanCore(loanId, actor.id, { allowForeign: true });
+  await refreshPanelsQuietly();
+
+  if (!result.ok) return ephemeral(`❌ ${result.error}`);
+  return ephemeral(`✅ **${result.itemName}** wurde für das Mitglied ausgebucht.`);
 }

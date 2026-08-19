@@ -239,6 +239,124 @@ export async function createTicketChannel(
   return { ok: true, channelId: channel.id };
 }
 
+const CHANNEL_TYPE_PRIVATE_THREAD = 12;
+
+/**
+ * Legt einen PRIVATEN Thread unter einem bestehenden Kanal an - Tickets
+ * laufen als Threads statt als eigene Kanaele, damit die Kanalliste nicht
+ * zuwaechst. Private Threads sind nur fuer explizit hinzugefuegte Mitglieder
+ * (plus Rollen mit "Private Threads verwalten") sichtbar; der Ersteller wird
+ * direkt per addThreadMember aufgenommen.
+ */
+export async function createTicketThread(
+  parentChannelId: string,
+  threadName: string,
+  applicantDiscordId: string
+): Promise<{ ok: true; threadId: string } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const res = await fetch(`https://discord.com/api/v10/channels/${parentChannelId}/threads`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: threadName.slice(0, 100),
+      type: CHANNEL_TYPE_PRIVATE_THREAD,
+      invitable: false,
+      auto_archive_duration: 10080, // 7 Tage
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    return { ok: false, error: `Ticket-Thread konnte nicht erstellt werden (${res.status}): ${text.slice(0, 150)}` };
+  }
+
+  const thread = (await res.json()) as { id: string };
+  await addThreadMember(thread.id, applicantDiscordId).catch(() => {});
+  return { ok: true, threadId: thread.id };
+}
+
+/** Fuegt eine Person einem privaten Thread hinzu (Claim, "/ticket add"). */
+export async function addThreadMember(
+  threadId: string,
+  userId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const res = await fetch(`https://discord.com/api/v10/channels/${threadId}/thread-members/${userId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}` },
+  });
+  if (!res.ok && res.status !== 204) {
+    return { ok: false, error: `Konnte Person nicht zum Thread hinzufügen (${res.status}).` };
+  }
+  return { ok: true };
+}
+
+/** Archiviert bzw. sperrt einen Thread - beim Schliessen eines Tickets. */
+export async function archiveThread(threadId: string): Promise<{ ok: boolean }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false };
+  const res = await fetch(`https://discord.com/api/v10/channels/${threadId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ archived: true, locked: true }),
+  });
+  return { ok: res.ok };
+}
+
+type FetchedMessage = {
+  id: string;
+  content?: string;
+  timestamp: string;
+  author?: { username?: string; global_name?: string | null; bot?: boolean };
+  attachments?: Array<{ url: string; filename: string }>;
+};
+
+/**
+ * Liest den kompletten Verlauf eines Kanals/Threads aus (aelteste zuerst) und
+ * baut daraus ein reines Text-Transkript. Wird beim Schliessen eines Tickets
+ * gesichert, damit der Nachweis erhalten bleibt, auch wenn der Thread spaeter
+ * archiviert oder geloescht wird.
+ */
+export async function fetchChannelTranscript(channelId: string): Promise<string | null> {
+  if (!DISCORD_BOT_TOKEN) return null;
+
+  const collected: FetchedMessage[] = [];
+  let before: string | undefined;
+
+  // Discord liefert maximal 100 Nachrichten pro Aufruf, neueste zuerst.
+  // Deckel bei 1000, damit ein ausuferndes Ticket nicht endlos paginiert.
+  for (let page = 0; page < 10; page++) {
+    const url = new URL(`https://discord.com/api/v10/channels/${channelId}/messages`);
+    url.searchParams.set("limit", "100");
+    if (before) url.searchParams.set("before", before);
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}` },
+      cache: "no-store",
+    }).catch(() => null);
+    if (!res || !res.ok) break;
+
+    const batch = (await res.json()) as FetchedMessage[];
+    if (batch.length === 0) break;
+    collected.push(...batch);
+    if (batch.length < 100) break;
+    before = batch[batch.length - 1].id;
+  }
+
+  if (collected.length === 0) return null;
+
+  return collected
+    .reverse()
+    .map((msg) => {
+      const author = msg.author?.global_name || msg.author?.username || "Unbekannt";
+      const time = new Date(msg.timestamp).toLocaleString("de-DE");
+      const attachments = (msg.attachments ?? []).map((a) => `[Anhang: ${a.filename}]`).join(" ");
+      const body = [msg.content?.trim(), attachments].filter(Boolean).join(" ");
+      return `[${time}] ${author}: ${body || "(keine Textnachricht)"}`;
+    })
+    .join("\n");
+}
+
 /**
  * Gibt einer einzelnen Person individuellen Zugriff auf einen Ticket-Kanal -
  * genutzt beim Claimen (die claimende Aufsichtsperson) und beim
@@ -482,6 +600,38 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
             options: [{ type: 6, name: "user", description: "Wer hinzugefügt werden soll", required: true }], // USER
           },
         ],
+      },
+      {
+        name: "statistik",
+        description: "Zeigt die Ausleih-Statistik (nur für dich sichtbar)",
+        options: [
+          {
+            type: 1, // SUB_COMMAND
+            name: "allgemein",
+            description: "Die gefragtesten Items und Kategorien im ganzen LeihCenter",
+          },
+          {
+            type: 1, // SUB_COMMAND
+            name: "meine",
+            description: "Deine eigenen Ausleihen und Lieblings-Items",
+          },
+        ],
+      },
+      {
+        name: "verifizieren",
+        description: "Verknüpft deinen Minecraft-Account mit deinem Konto (Pflicht fürs Ausleihen)",
+        options: [
+          {
+            type: 3, // STRING
+            name: "minecraft-name",
+            description: "Dein exakter Minecraft-Name",
+            required: true,
+          },
+        ],
+      },
+      {
+        name: "ausleihen",
+        description: "Alle aktuell ausgeliehenen Items mit Ausbuchen-Button (nur für Aufsicht/Owner)",
       },
       {
         name: "abo",

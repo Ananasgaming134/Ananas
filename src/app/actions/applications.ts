@@ -103,7 +103,11 @@ export async function rejectApplication(applicationId: string, formData: FormDat
 export async function blockApplicant(discordId: string, formData: FormData) {
   const member = await requireMember(ROLES.OWNER);
   const reason = String(formData.get("reason") ?? "").trim() || "Kein Grund angegeben.";
-  await blockApplicantCore(discordId, reason, member.id);
+  // Leeres Feld = dauerhafte rote Liste, sonst befristete Aufnahmesperre.
+  const monthsRaw = String(formData.get("months") ?? "").trim();
+  const months = monthsRaw ? parseInt(monthsRaw, 10) : null;
+
+  await blockApplicantCore(discordId, reason, member.id, months);
   refreshApplicationPages();
 }
 

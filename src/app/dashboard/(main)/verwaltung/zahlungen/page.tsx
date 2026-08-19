@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import PageHeader from "@/components/PageHeader";
 import { checkPayments, creditPaymentToBalance, ignorePayment } from "@/app/actions/payments";
 import { isRefundEligible } from "@/lib/subscriptions";
 import { MEMBER_STATUS, ROLES } from "@/lib/constants";
@@ -31,26 +32,29 @@ export default async function ZahlungenPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Zahlungen</h1>
-          <p className="mt-1 text-sm text-muted">
+      <PageHeader
+        eyebrow="Verwaltung"
+        title="Zahlungen"
+        description={
+          <>
             Eingehende Business-Card-Überweisungen (BC-584289), automatisch per Discord-Username
             zugeordnet. Gutschreiben legt den Betrag als Guthaben (1 ₵ = 1 $) auf dem Konto an
             &ndash; das Abbuchen eines Pakets passiert separat auf der Akte-Seite. Nur aktive
             Kunden können Guthaben aufladen; Zahlungen von Mitgliedern ohne aktiven Status zählen
             automatisch als Spende.
-          </p>
-        </div>
-        <form action={checkPayments}>
-          <button
-            type="submit"
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110"
-          >
-            Zahlungen jetzt prüfen
-          </button>
-        </form>
-      </div>
+          </>
+        }
+        action={
+          <form action={checkPayments}>
+            <button
+              type="submit"
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110"
+            >
+              Zahlungen jetzt prüfen
+            </button>
+          </form>
+        }
+      />
 
       <div className="card overflow-hidden">
         <table className="w-full text-left text-sm">

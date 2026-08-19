@@ -1,5 +1,6 @@
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import PageHeader from "@/components/PageHeader";
 import { approveApplication, blockApplicant, rejectApplication, unblockApplicant } from "@/app/actions/applications";
 import { approvePlanChange, rejectPlanChange } from "@/app/actions/planChanges";
 import { ROLES, SUBSCRIPTION_PLANS, formatCoins } from "@/lib/constants";
@@ -27,13 +28,11 @@ export default async function BewerbungenPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-xl font-semibold">Bewerbungen</h1>
-        <p className="mt-1 text-sm text-muted">
-          Offene Kunden-Bewerbungen prüfen. Annehmen legt sofort die Akte an, vergibt die
-          Kunde-Rolle in Discord und macht die Zahlung fällig. Nur der Owner darf final entscheiden.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Verwaltung"
+        title="Bewerbungen"
+        description="Offene Kunden-Bewerbungen prüfen. Annehmen legt sofort die Akte an, vergibt die Kunde-Rolle in Discord und macht die Zahlung fällig. Nur der Owner darf final entscheiden."
+      />
 
       {pending.length === 0 ? (
         <div className="card p-8 text-center text-sm text-muted">Keine offenen Bewerbungen.</div>
@@ -126,18 +125,29 @@ export default async function BewerbungenPage() {
                       Ablehnen
                     </button>
                   </form>
-                  <form action={blockApplicant.bind(null, app.discordId)} className="flex items-center gap-1.5">
+                  <form action={blockApplicant.bind(null, app.discordId)} className="flex flex-wrap items-center gap-1.5">
                     <input
                       type="text"
                       name="reason"
-                      placeholder="Grund für rote Liste"
-                      className="w-48 rounded-lg border border-danger/40 bg-surface px-2.5 py-2 text-xs outline-none ring-danger/40 focus:ring-2"
+                      placeholder="Grund für Sperre"
+                      className="w-44 rounded-lg border border-danger/40 bg-surface px-2.5 py-2 text-xs outline-none ring-danger/40 focus:ring-2"
                     />
+                    <select
+                      name="months"
+                      defaultValue="6"
+                      className="rounded-lg border border-danger/40 bg-surface px-2.5 py-2 text-xs outline-none ring-danger/40 focus:ring-2"
+                    >
+                      <option value="1">1 Monat Sperre</option>
+                      <option value="3">3 Monate Sperre</option>
+                      <option value="6">6 Monate Sperre</option>
+                      <option value="12">12 Monate Sperre</option>
+                      <option value="">Dauerhaft (rote Liste)</option>
+                    </select>
                     <button
                       type="submit"
                       className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs font-medium text-danger transition hover:bg-danger/20"
                     >
-                      🚫 Rote Liste
+                      🚫 Sperren
                     </button>
                   </form>
                 </div>
@@ -191,29 +201,53 @@ export default async function BewerbungenPage() {
       </div>
 
       <div>
-        <h2 className="mb-3 text-sm font-semibold">Rote Liste</h2>
+        <h2 className="mb-1 text-sm font-semibold">Sperren &amp; rote Liste</h2>
+        <p className="mb-3 text-xs text-muted">
+          Befristete Aufnahmesperren laufen von allein aus &ndash; danach kann sich die Person wieder
+          bewerben. Dauerhafte Einträge (rote Liste) sperren zusätzlich den Login.
+        </p>
         {blocks.length === 0 ? (
-          <p className="text-sm text-muted">Niemand ist aktuell dauerhaft von Bewerbungen ausgeschlossen.</p>
+          <p className="text-sm text-muted">Aktuell ist niemand gesperrt.</p>
         ) : (
           <div className="card divide-y divide-border overflow-hidden">
-            {blocks.map((block) => (
-              <div key={block.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
-                <div>
-                  <p className="font-medium">Discord-ID {block.discordId}</p>
-                  <p className="text-xs text-muted">
-                    {block.reason} &middot; seit {block.blockedAt.toLocaleDateString("de-DE")}
-                  </p>
+            {blocks.map((block) => {
+              const expired = Boolean(block.expiresAt && block.expiresAt <= new Date());
+              return (
+                <div key={block.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">Discord-ID {block.discordId}</p>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                          expired
+                            ? "border-border bg-surface-2 text-muted"
+                            : block.expiresAt
+                              ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-500"
+                              : "border-danger/40 bg-danger/10 text-danger"
+                        }`}
+                      >
+                        {expired
+                          ? "abgelaufen"
+                          : block.expiresAt
+                            ? `Sperre bis ${block.expiresAt.toLocaleDateString("de-DE")}`
+                            : "dauerhaft"}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted">
+                      {block.reason} &middot; seit {block.blockedAt.toLocaleDateString("de-DE")}
+                    </p>
+                  </div>
+                  <form action={unblockApplicant.bind(null, block.id)}>
+                    <button
+                      type="submit"
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-surface-2"
+                    >
+                      Entfernen
+                    </button>
+                  </form>
                 </div>
-                <form action={unblockApplicant.bind(null, block.id)}>
-                  <button
-                    type="submit"
-                    className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-surface-2"
-                  >
-                    Entfernen
-                  </button>
-                </form>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

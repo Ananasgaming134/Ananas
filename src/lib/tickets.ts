@@ -1,9 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import {
+  addThreadMember,
+  archiveThread,
   createTicketCategory,
   createTicketChannel,
+  createTicketThread,
   ensureTicketQueueChannel,
+  fetchChannelTranscript,
   grantChannelMemberAccess,
   revokeChannelSendPermission,
   roleIdsFromEnv,
@@ -108,34 +112,56 @@ async function provisionTicketChannel(
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket || ticket.discordChannelId) return;
 
-  let categoryId = deployment.ticketCategoryId;
-  if (!categoryId) {
-    const category = await createTicketCategory(deployment.guildId);
-    if (category.ok) {
-      categoryId = category.categoryId;
-      await prisma.botDeployment.update({
-        where: { id: deployment.id },
-        data: { ticketCategoryId: categoryId },
-      });
-    }
-  }
-
   const prefix = ticket.category === TICKET_CATEGORY.BEWERBUNG ? "bewerbung" : "ticket";
   const channelName = `${prefix}-${ticket.id.slice(-6)}`;
 
-  const result = await createTicketChannel(deployment.guildId, categoryId, channelName, ticket.applicantDiscordId);
-  if (!result.ok) return;
+  // Bevorzugt als privater Thread unter dem Ticket-Panel-Kanal (haelt die
+  // Kanalliste sauber). Nur wenn kein Panel-Kanal eingerichtet ist bzw. das
+  // Anlegen scheitert, faellt es auf einen eigenen Kanal in der
+  // Ticket-Kategorie zurueck - beides liefert eine Kanal-ID, unter der sich
+  // Nachrichten posten lassen, der Rest des Codes bleibt gleich.
+  let channelId: string | null = null;
 
-  await prisma.ticket.update({ where: { id: ticket.id }, data: { discordChannelId: result.channelId } });
+  if (deployment.ticketPanelChannelId) {
+    const thread = await createTicketThread(
+      deployment.ticketPanelChannelId,
+      channelName,
+      ticket.applicantDiscordId
+    );
+    if (thread.ok) channelId = thread.threadId;
+  }
+
+  if (!channelId) {
+    let categoryId = deployment.ticketCategoryId;
+    if (!categoryId) {
+      const category = await createTicketCategory(deployment.guildId);
+      if (category.ok) {
+        categoryId = category.categoryId;
+        await prisma.botDeployment.update({
+          where: { id: deployment.id },
+          data: { ticketCategoryId: categoryId },
+        });
+      }
+    }
+
+    const result = await createTicketChannel(deployment.guildId, categoryId, channelName, ticket.applicantDiscordId);
+    if (!result.ok) return;
+    channelId = result.channelId;
+  }
+
+  await prisma.ticket.update({ where: { id: ticket.id }, data: { discordChannelId: channelId } });
 
   let content = buildTicketIntro(ticket.category as TicketCategoryValue, ticket.subject);
   if (initialMessage) content += `\n\n${initialMessage}`;
 
-  await fetch(`${DISCORD_API}/channels/${result.channelId}/messages`, {
+  await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({
       content,
+      // allowed_mentions leer: der Intro-Text soll niemanden anpingen -
+      // insbesondere keine Dev-/Staff-Rollen, die hier nichts zu tun haben.
+      allowed_mentions: { parse: [] },
       components: [
         {
           type: 1,
@@ -178,6 +204,8 @@ async function postToQueue(
     headers: authHeaders(),
     body: JSON.stringify({
       content: `${label} — **${subject}**`,
+      // Bewusst kein Rollen-Ping: wer zustaendig ist, sieht den Kanal ohnehin.
+      allowed_mentions: { parse: [] },
       components: [
         {
           type: 1,
@@ -235,6 +263,10 @@ export async function claimTicketCore(ticketId: string, actorId: string): Promis
   });
 
   if (ticket.discordChannelId && actor) {
+    // Bei einem Thread greift die Kanal-Berechtigung nicht - dort muss die
+    // Person als Thread-Mitglied aufgenommen werden. Beides versuchen, je
+    // nachdem ob das Ticket als Thread oder als eigener Kanal laeuft.
+    await addThreadMember(ticket.discordChannelId, actor.discordId).catch(() => {});
     await grantChannelMemberAccess(ticket.discordChannelId, actor.discordId).catch(() => {});
   }
 
@@ -261,13 +293,25 @@ export async function closeTicketCore(ticketId: string, actorId: string): Promis
   if (!ticket) return { ok: false, error: "Ticket nicht gefunden." };
   if (ticket.status === TICKET_STATUS.CLOSED) return { ok: false, error: "Ticket ist bereits geschlossen." };
 
+  // Verlauf sichern BEVOR der Thread archiviert/gesperrt wird - danach ist er
+  // ueber die API zwar noch lesbar, kann aber jederzeit geloescht werden.
+  const transcript = ticket.discordChannelId
+    ? await fetchChannelTranscript(ticket.discordChannelId).catch(() => null)
+    : null;
+
   await prisma.ticket.update({
     where: { id: ticketId },
-    data: { status: TICKET_STATUS.CLOSED, closedById: actorId, closedAt: new Date() },
+    data: {
+      status: TICKET_STATUS.CLOSED,
+      closedById: actorId,
+      closedAt: new Date(),
+      ...(transcript ? { transcript } : {}),
+    },
   });
 
   if (ticket.discordChannelId) {
     await revokeChannelSendPermission(ticket.discordChannelId, ticket.applicantDiscordId).catch(() => {});
+    await archiveThread(ticket.discordChannelId).catch(() => {});
   }
 
   if (ticket.status !== TICKET_STATUS.CLAIMED && ticket.queueMessageId && ticket.discordGuildId) {

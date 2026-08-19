@@ -113,6 +113,23 @@ export default async function ItemsPage({
         </div>
       )}
 
+      {!member.verifiedAt && (
+        <div className="card flex flex-wrap items-center justify-between gap-3 border-yellow-500/40 bg-yellow-500/10 p-4">
+          <div>
+            <p className="text-sm font-semibold text-yellow-500">⚠️ Minecraft-Account noch nicht verifiziert</p>
+            <p className="mt-1 text-sm text-yellow-500/90">
+              Bevor du etwas ausleihen kannst, musst du einmalig deinen Minecraft-Namen bestätigen.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/akte"
+            className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110"
+          >
+            Jetzt verifizieren
+          </Link>
+        </div>
+      )}
+
       {categories.length > 0 && (
         <form className="card flex flex-wrap items-center gap-3 p-4" method="GET">
           <input
@@ -242,6 +259,13 @@ export default async function ItemsPage({
                               className="block w-full rounded-lg border border-border px-3 py-2 text-center text-sm text-muted transition hover:bg-surface-2"
                             >
                               Kein aktives Abo
+                            </a>
+                          ) : !member.verifiedAt ? (
+                            <a
+                              href="/dashboard/akte"
+                              className="block w-full rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-center text-sm text-yellow-500 transition hover:bg-yellow-500/20"
+                            >
+                              Verifizierung nötig
                             </a>
                           ) : inCooldown && cooldownEnd ? (
                             <div className="space-y-2">

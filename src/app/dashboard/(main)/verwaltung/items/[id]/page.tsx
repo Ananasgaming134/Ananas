@@ -1,3 +1,4 @@
+import PageHeader from "@/components/PageHeader";
 import { notFound } from "next/navigation";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
@@ -23,10 +24,7 @@ export default async function ItemBearbeitenPage({
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Item bearbeiten</h1>
-        <p className="mt-1 text-sm text-muted">{item.name}</p>
-      </div>
+      <PageHeader eyebrow="Verwaltung" title="Item bearbeiten" description={item.name} />
       <ItemForm
         action={boundAction}
         initial={item}

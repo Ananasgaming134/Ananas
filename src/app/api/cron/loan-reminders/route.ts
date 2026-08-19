@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { processLoanReminders } from "@/lib/loanReminders";
+import { postSubscriptionReminders } from "@/lib/subscriptions";
+import { syncMinecraftNames } from "@/lib/verification";
 
 /**
  * Wird per System-Crontab auf dem Server jede Minute aufgerufen (siehe
@@ -7,6 +9,12 @@ import { processLoanReminders } from "@/lib/loanReminders";
  * verschicken und bei mehr als 15 Min. Ueberziehung automatisch eine
  * Ausleih-Sperre zu verhaengen. Per Secret-Query-Parameter geschuetzt, damit
  * das nicht von aussen missbraucht werden kann.
+ *
+ * Zusaetzlich laufen hier die stuendlichen Aufgaben mit: Abo-Ablauf-
+ * Erinnerungen in den Discord-Abo-Kanal und der Mojang-Namensabgleich. Beide
+ * sind selbst gegen Mehrfachausfuehrung abgesichert (subscriptionReminderSentAt
+ * bzw. Vergleich gegen den gespeicherten Namen), der Zeitfilter hier spart
+ * nur unnoetige Discord-/Mojang-Aufrufe bei minuetlichem Cron.
  */
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -20,5 +28,15 @@ export async function GET(request: Request) {
   }
 
   const result = await processLoanReminders();
-  return NextResponse.json({ ok: true, ...result });
+
+  const hourly = url.searchParams.get("hourly") === "1" || new Date().getMinutes() === 0;
+  let subscriptions: unknown = "übersprungen";
+  let nameSync: unknown = "übersprungen";
+
+  if (hourly) {
+    subscriptions = await postSubscriptionReminders().catch((err) => ({ ok: false, error: String(err) }));
+    nameSync = await syncMinecraftNames().catch((err) => ({ error: String(err) }));
+  }
+
+  return NextResponse.json({ ok: true, ...result, subscriptions, nameSync });
 }

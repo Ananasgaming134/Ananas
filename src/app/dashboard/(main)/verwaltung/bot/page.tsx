@@ -1,5 +1,6 @@
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import PageHeader from "@/components/PageHeader";
 import {
   addBotDeployment,
   checkSubscriptionReminders,
@@ -22,14 +23,11 @@ export default async function BotVerwaltenPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Discord-Server &amp; Ausleih-Panel</h1>
-        <p className="mt-1 text-sm text-muted">
-          Hier legst du fest, auf welchen Discord-Servern der Bot ein
-          sich selbst aktualisierendes Item-Panel pflegt, in welchem Kanal,
-          und welche Rolle dort ausleihen darf.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Verwaltung"
+        title="Discord-Server & Ausleih-Panel"
+        description="Hier legst du fest, auf welchen Discord-Servern der Bot ein sich selbst aktualisierendes Item-Panel pflegt, in welchem Kanal, und welche Rolle dort ausleihen darf."
+      />
 
       {inviteUrl && (
         <div className="card p-5">

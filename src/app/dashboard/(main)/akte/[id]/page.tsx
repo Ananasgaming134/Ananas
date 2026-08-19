@@ -17,6 +17,11 @@ import ElapsedTime from "@/components/ElapsedTime";
 import LoanCountdown from "@/components/LoanCountdown";
 import AboAssignForm from "@/components/AboAssignForm";
 import BalanceAdjustForm from "@/components/BalanceAdjustForm";
+import VerifyForm from "@/components/VerifyForm";
+import SanctionForm from "@/components/SanctionForm";
+import { unverifyMember } from "@/app/actions/verification";
+import { removeSanction } from "@/app/actions/sanctions";
+import { SANCTION_TYPE_LABELS } from "@/lib/sanctions";
 import {
   canManage,
   formatCoins,
@@ -40,7 +45,7 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
   const target = await prisma.member.findUnique({ where: { id } });
   if (!target) notFound();
 
-  const [loans, notes, suspensionEvents] = await Promise.all([
+  const [loans, notes, suspensionEvents, sanctions] = await Promise.all([
     prisma.loan.findMany({
       where: { memberId: target.id },
       include: { item: true },
@@ -55,6 +60,11 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
       : Promise.resolve([]),
     prisma.auditLog.findMany({
       where: { targetId: target.id, action: "BORROW_SUSPENDED" },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.sanction.findMany({
+      where: { memberId: target.id },
+      include: { issuedBy: true },
       orderBy: { createdAt: "desc" },
     }),
   ]);
@@ -269,7 +279,116 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
           )}
           <Field label="Mitglied seit" value={target.joinedAt.toLocaleDateString("de-DE")} />
         </dl>
+
+        <div
+          className={`mt-6 rounded-lg border p-4 ${
+            target.verifiedAt
+              ? "border-accent-2/40 bg-accent-2/5"
+              : "border-yellow-500/40 bg-yellow-500/10"
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">
+                {target.verifiedAt ? "✅ Minecraft-Account verifiziert" : "⚠️ Nicht verifiziert"}
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                {target.verifiedAt ? (
+                  <>
+                    Verifiziert als <span className="font-mono text-foreground">{target.minecraftName}</span> am{" "}
+                    {target.verifiedAt.toLocaleDateString("de-DE")}.
+                    {target.minecraftUuid && (
+                      <>
+                        {" "}
+                        Namensänderungen werden über die UUID automatisch erkannt.
+                      </>
+                    )}
+                  </>
+                ) : isSelf ? (
+                  "Ohne Verifizierung kannst du nichts ausleihen. Gib deinen Minecraft-Namen ein — er wird direkt bei Mojang geprüft."
+                ) : (
+                  "Dieses Mitglied kann erst ausleihen, wenn der Minecraft-Account verifiziert ist."
+                )}
+              </p>
+            </div>
+            {target.verifiedAt && showManageActions && (
+              <form action={unverifyMember.bind(null, target.id)}>
+                <button
+                  type="submit"
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-danger"
+                >
+                  Verifizierung zurückziehen
+                </button>
+              </form>
+            )}
+          </div>
+          {!target.verifiedAt && (isSelf || isAufsichtPlus) && (
+            <div className="mt-3">
+              <VerifyForm
+                memberId={target.id}
+                defaultName={target.minecraftName || undefined}
+                asStaff={!isSelf}
+              />
+            </div>
+          )}
+        </div>
       </div>
+
+      {isAufsichtPlus && (
+        <div className="card p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Sanktionen</h2>
+              <p className="mt-1 text-xs text-muted">
+                Dokumentierte Verwarnungen und Maßnahmen &ndash; unabhängig von automatisch
+                verhängten Ausleih-Sperren.
+              </p>
+            </div>
+            <span className="rounded-full border border-border bg-surface-2 px-2.5 py-0.5 text-xs text-muted">
+              {sanctions.length} Eintrag/Einträge
+            </span>
+          </div>
+
+          {showManageActions && (
+            <div className="mt-4">
+              <SanctionForm memberId={target.id} />
+            </div>
+          )}
+
+          {sanctions.length === 0 ? (
+            <p className="mt-4 text-sm text-muted">Keine Sanktionen eingetragen.</p>
+          ) : (
+            <ul className="mt-4 divide-y divide-border">
+              {sanctions.map((sanction) => (
+                <li key={sanction.id} className="flex items-start justify-between gap-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm">
+                      <span className="font-medium text-danger">
+                        {SANCTION_TYPE_LABELS[sanction.type] ?? sanction.type}
+                      </span>{" "}
+                      &mdash; {sanction.reason}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted">
+                      {sanction.createdAt.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}
+                      {sanction.issuedBy && ` · durch ${sanction.issuedBy.displayName}`}
+                    </p>
+                  </div>
+                  {showManageActions && (
+                    <form action={removeSanction.bind(null, sanction.id, target.id)}>
+                      <button
+                        type="submit"
+                        className="shrink-0 rounded-md border border-border px-2 py-1 text-[11px] text-muted transition hover:bg-surface-2 hover:text-foreground"
+                      >
+                        Entfernen
+                      </button>
+                    </form>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div
         className={`card border-l-4 p-6 ${

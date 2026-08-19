@@ -30,6 +30,16 @@ export type CreateApplicationInput = {
 export type CreateApplicationResult = { ok: true; applicationId: string } | { ok: false; error: string };
 
 /**
+ * Ein Eintrag greift nur, solange er nicht abgelaufen ist. expiresAt = null
+ * ist die dauerhafte rote Liste, ein Datum eine befristete Aufnahmesperre
+ * (z.B. 6 Monate) - danach darf sich die Person wieder bewerben, ohne dass
+ * jemand den Eintrag manuell entfernen muss.
+ */
+export function isBlockActive(block: { expiresAt: Date | null }): boolean {
+  return !block.expiresAt || block.expiresAt > new Date();
+}
+
+/**
  * Kernlogik zum Einreichen einer Kunden-Bewerbung - genutzt von der
  * Website (/bewerbung) UND vom Discord-Befehl /bewerben. Prueft rote Liste,
  * bereits aktive Mitgliedschaft und doppelte offene Bewerbungen.
@@ -39,7 +49,14 @@ export async function createApplicationCore(input: CreateApplicationInput): Prom
   if (!plan) return { ok: false, error: "Ungültiges Abo-Paket." };
 
   const blocked = await prisma.applicationBlock.findUnique({ where: { discordId: input.discordId } });
-  if (blocked) return { ok: false, error: "Für diesen Account ist keine erneute Bewerbung möglich." };
+  if (blocked && isBlockActive(blocked)) {
+    return {
+      ok: false,
+      error: blocked.expiresAt
+        ? `Du hast eine Aufnahmesperre bis ${blocked.expiresAt.toLocaleDateString("de-DE")} - danach kannst du dich wieder bewerben.`
+        : "Für diesen Account ist keine erneute Bewerbung möglich.",
+    };
+  }
 
   const existingMember = await prisma.member.findUnique({ where: { discordId: input.discordId } });
   if (existingMember?.status === MEMBER_STATUS.ACTIVE) {
@@ -222,30 +239,40 @@ export async function rejectApplicationCore(
 }
 
 /**
- * Setzt eine Discord-ID auf die rote Liste - lehnt eine evtl. noch offene
- * Bewerbung mit ab. Blockiert kuenftig sowohl neue Bewerbungen
- * (createApplicationCore) als auch den Login selbst (siehe auth.ts).
+ * Sperrt eine Discord-ID fuer Bewerbungen - lehnt eine evtl. noch offene
+ * Bewerbung mit ab. Ohne `months` ist es die dauerhafte rote Liste (blockiert
+ * zusaetzlich den Login selbst, siehe auth.ts); mit `months` eine befristete
+ * Aufnahmesperre, die von allein auslaeuft.
  */
 export async function blockApplicantCore(
   discordId: string,
   reason: string,
-  actorId: string
+  actorId: string,
+  months?: number | null
 ): Promise<ApplicationActionResult> {
   const pending = await prisma.membershipApplication.findFirst({ where: { discordId, status: "PENDING" } });
   if (pending) {
     await rejectApplicationCore(pending.id, reason, actorId);
   }
 
+  let expiresAt: Date | null = null;
+  if (months && Number.isFinite(months) && months > 0) {
+    expiresAt = new Date();
+    expiresAt.setMonth(expiresAt.getMonth() + months);
+  }
+
   await prisma.applicationBlock.upsert({
     where: { discordId },
-    create: { discordId, reason, blockedById: actorId },
-    update: { reason, blockedById: actorId, blockedAt: new Date() },
+    create: { discordId, reason, blockedById: actorId, expiresAt },
+    update: { reason, blockedById: actorId, blockedAt: new Date(), expiresAt },
   });
 
   await logAction({
     actorId,
     action: "APPLICANT_BLOCKED",
-    details: `Discord-ID ${discordId} auf die rote Liste gesetzt: ${reason}`,
+    details: expiresAt
+      ? `Discord-ID ${discordId} mit Aufnahmesperre bis ${expiresAt.toLocaleDateString("de-DE")} belegt: ${reason}`
+      : `Discord-ID ${discordId} auf die rote Liste gesetzt (dauerhaft): ${reason}`,
   });
 
   return { ok: true };

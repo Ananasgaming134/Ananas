@@ -3,6 +3,7 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import RoleBadge from "@/components/RoleBadge";
 import StatusBadge from "@/components/StatusBadge";
+import PageHeader from "@/components/PageHeader";
 import { ROLES } from "@/lib/constants";
 
 export default async function MitgliederPage({
@@ -30,14 +31,17 @@ export default async function MitgliederPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Mitglieder-Archiv</h1>
-        <p className="mt-1 text-sm text-muted">
-          Dauerhaftes Verzeichnis aller Mitglieder, die jemals eine
-          LeihCenter-Rolle hatten &ndash; inklusive freigabe-entzogener und
-          ausgeschlossener Mitglieder.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Verwaltung"
+        title="Mitglieder-Archiv"
+        description={
+          <>
+            Dauerhaftes Verzeichnis aller Mitglieder, die jemals eine
+            LeihCenter-Rolle hatten &ndash; inklusive freigabe-entzogener und
+            ausgeschlossener Mitglieder.
+          </>
+        }
+      />
 
       <form className="flex gap-2">
         <input

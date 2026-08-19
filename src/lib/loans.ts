@@ -60,6 +60,14 @@ export async function borrowItemCore(
     return { ok: false, error: "Du brauchst ein aktives, bezahltes Abo, um etwas auszuleihen." };
   }
 
+  if (!member.verifiedAt) {
+    return {
+      ok: false,
+      error:
+        "Du musst deinen Minecraft-Account verifizieren, bevor du ausleihen kannst - das geht auf der Website unter „Profil“.",
+    };
+  }
+
   const [activeLoansForItem, alreadyBorrowed, lastReturnOfItem] = await Promise.all([
     prisma.loan.count({ where: { itemId, status: LOAN_STATUS.ACTIVE } }),
     prisma.loan.findFirst({ where: { itemId, memberId, status: LOAN_STATUS.ACTIVE } }),
@@ -104,28 +112,39 @@ export type ReturnResult =
   | { ok: false; error: string };
 
 /**
- * Kernlogik zur Rueckgabe. `memberId` muss zum Loan gehoeren (kein
- * fremdes Zurueckgeben ueber die API). Liefert bei Erfolg zusaetzlich mit,
- * bis wann die 30-Minuten-Abklingzeit fuer dasselbe Item laeuft, damit
- * Aufrufer (Website, Discord) das direkt anzeigen koennen, ohne separat
- * nachzufragen.
+ * Kernlogik zur Rueckgabe. Standardmaessig darf nur zurueckgeben, wem die
+ * Ausleihe auch gehoert - niemand kann eine fremde Ausleihe "uebersteuern".
+ * Mit `allowForeign` (nur fuer Aufsicht/Owner, Berechtigung prueft der
+ * Aufrufer) laesst sich das gezielt aushebeln, z.B. wenn jemand ein Item
+ * abgegeben, aber vergessen hat es auszubuchen.
+ *
+ * Eine Rueckgabe ist jederzeit moeglich - insbesondere auch VOR Ablauf der
+ * 2h-Frist; die Frist begrenzt nur, wie lange man das Item behalten darf.
  */
-export async function returnLoanCore(loanId: string, memberId: string): Promise<ReturnResult> {
+export async function returnLoanCore(
+  loanId: string,
+  actorMemberId: string,
+  options: { allowForeign?: boolean } = {}
+): Promise<ReturnResult> {
   const loan = await prisma.loan.findUnique({ where: { id: loanId }, include: { item: true } });
-  if (!loan || loan.memberId !== memberId || loan.status !== LOAN_STATUS.ACTIVE) {
+  if (!loan || loan.status !== LOAN_STATUS.ACTIVE) {
     return { ok: false, error: "Ausleihe nicht gefunden oder bereits zurückgegeben." };
   }
+  if (loan.memberId !== actorMemberId && !options.allowForeign) {
+    return { ok: false, error: "Das ist nicht deine Ausleihe." };
+  }
 
+  const isForeign = loan.memberId !== actorMemberId;
   const returnedAt = new Date();
   await prisma.loan.update({
     where: { id: loanId },
     data: { status: LOAN_STATUS.RETURNED, returnedAt },
   });
   await logAction({
-    actorId: memberId,
-    targetId: memberId,
+    actorId: actorMemberId,
+    targetId: loan.memberId,
     action: "ITEM_RETURNED",
-    details: `"${loan.item.name}" zurückgegeben (Loan ${loanId})`,
+    details: `"${loan.item.name}" zurückgegeben (Loan ${loanId})${isForeign ? " - durch Aufsicht/Owner für das Mitglied ausgebucht" : ""}`,
   });
 
   return {

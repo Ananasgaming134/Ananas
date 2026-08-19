@@ -2,6 +2,8 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import StatCard from "@/components/StatCard";
+import PageHeader from "@/components/PageHeader";
+import { forceReturnLoan } from "@/app/actions/loans";
 import { formatCoins, hasAtLeastRole, LOAN_STATUS, MEMBER_STATUS, ROLES } from "@/lib/constants";
 
 const SECTIONS = [
@@ -55,6 +57,13 @@ const SECTIONS = [
     icon: "📦",
   },
   {
+    href: "/dashboard/verwaltung/statistik",
+    title: "Statistik",
+    description: "Meistgeliehene Items/Kategorien, aktivste Kunden, Kanal-Nutzung.",
+    minRole: ROLES.AUFSICHT,
+    icon: "📊",
+  },
+  {
     href: "/dashboard/verwaltung/bot",
     title: "Discord-Server",
     description: "Bot-Konfiguration, Panels, Abo-Erinnerungen.",
@@ -66,34 +75,63 @@ const SECTIONS = [
 export default async function VerwaltungPage() {
   const member = await requireMember(ROLES.AUFSICHT);
 
-  const [kundenCount, activeLoans, items, recentLogs] = await Promise.all([
+  const [kundenCount, openLoans, items, recentLogs, openTickets, pendingPayments] = await Promise.all([
     prisma.member.count({ where: { role: ROLES.KUNDE, status: MEMBER_STATUS.ACTIVE } }),
-    prisma.loan.count({ where: { status: LOAN_STATUS.ACTIVE } }),
+    prisma.loan.findMany({
+      where: { status: LOAN_STATUS.ACTIVE },
+      include: { item: true, member: true },
+      orderBy: { borrowedAt: "asc" },
+    }),
     prisma.item.findMany({ select: { averagePrice: true, quantityTotal: true } }),
     prisma.auditLog.findMany({
       orderBy: { createdAt: "desc" },
       take: 6,
       include: { actor: true, target: true },
     }),
+    prisma.ticket.count({ where: { status: { not: "CLOSED" } } }),
+    prisma.payment.count({ where: { status: "PENDING" } }),
   ]);
   const itemValue = items.reduce((sum, i) => sum + (i.averagePrice ?? 0) * i.quantityTotal, 0);
+  const now = new Date();
+  const overdueLoans = openLoans.filter((l) => l.dueAt && l.dueAt < now);
 
   return (
     <div className="space-y-6">
-      <div className="fade-up">
-        <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted/70">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
-          Kontrollraum
-        </p>
-        <h1 className="mt-1 text-xl font-semibold sm:text-2xl">Verwaltung</h1>
-        <p className="mt-1 text-sm text-muted">
-          Interner Bereich für Aufsicht/Owner &ndash; nicht für Kunden sichtbar.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Kontrollraum"
+        title="Verwaltung"
+        description="Interner Bereich für Aufsicht/Owner – nicht für Kunden sichtbar."
+      />
+
+      {(openTickets > 0 || pendingPayments > 0 || overdueLoans.length > 0) && (
+        <div className="fade-up flex flex-wrap gap-2">
+          {overdueLoans.length > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs font-medium text-danger">
+              ⏰ {overdueLoans.length} überfällige Ausleihe(n)
+            </span>
+          )}
+          {openTickets > 0 && (
+            <Link
+              href="/dashboard/verwaltung/tickets"
+              className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition hover:bg-accent/20"
+            >
+              🎫 {openTickets} offene(s) Ticket(s)
+            </Link>
+          )}
+          {pendingPayments > 0 && (
+            <Link
+              href="/dashboard/verwaltung/zahlungen"
+              className="inline-flex items-center gap-1.5 rounded-full border border-accent-2/40 bg-accent-2/10 px-3 py-1.5 text-xs font-medium text-accent-2 transition hover:bg-accent-2/20"
+            >
+              💰 {pendingPayments} unbearbeitete Zahlung(en)
+            </Link>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard label="Kunden (aktiv)" value={String(kundenCount)} icon="👥" />
-        <StatCard label="Aktuell ausgeliehen" value={String(activeLoans)} accent="accent-2" icon="🔄" />
+        <StatCard label="Aktuell ausgeliehen" value={String(openLoans.length)} accent="accent-2" icon="🔄" />
         <StatCard label="Gesamtwert Items" value={formatCoins(itemValue)} icon="💰" />
       </div>
 
@@ -111,6 +149,57 @@ export default async function VerwaltungPage() {
             </div>
           </Link>
         ))}
+      </div>
+
+      <div className="fade-up card p-5">
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Aktuell ausgeliehen</h2>
+          <span className="text-xs text-muted">{openLoans.length} aktive Ausleihe(n)</span>
+        </div>
+        <p className="mb-3 text-xs text-muted">
+          Hat jemand ein Item abgegeben, aber vergessen es zurückzugeben? Hier kannst du es für die
+          Person ausbuchen.
+        </p>
+        {openLoans.length === 0 ? (
+          <p className="text-sm text-muted">Aktuell ist nichts ausgeliehen.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {openLoans.map((loan) => {
+              const overdue = Boolean(loan.dueAt && loan.dueAt < now);
+              return (
+                <li key={loan.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm">
+                      <span className="font-medium">{loan.item.name}</span>{" "}
+                      <span className="text-muted">&middot;</span>{" "}
+                      <Link href={`/dashboard/akte/${loan.memberId}`} className="text-accent hover:underline">
+                        {loan.member.displayName}
+                      </Link>
+                    </p>
+                    <p className="mt-0.5 text-xs">
+                      {loan.dueAt ? (
+                        <span className={overdue ? "text-danger" : "text-muted"}>
+                          {overdue ? "⏰ Überfällig seit " : "Fällig um "}
+                          {loan.dueAt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      ) : (
+                        <span className="text-muted">ohne Frist</span>
+                      )}
+                    </p>
+                  </div>
+                  <form action={forceReturnLoan.bind(null, loan.id)}>
+                    <button
+                      type="submit"
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-surface-2 hover:text-accent"
+                    >
+                      ↩ Ausbuchen
+                    </button>
+                  </form>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
 
       <div className="fade-up card p-5">

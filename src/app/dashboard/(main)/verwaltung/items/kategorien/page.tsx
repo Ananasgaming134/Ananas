@@ -1,3 +1,4 @@
+import PageHeader from "@/components/PageHeader";
 import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
@@ -14,20 +15,19 @@ export default async function KategorienPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Kategorien</h1>
-          <p className="mt-1 text-sm text-muted">
-            Zum Einsortieren und Filtern der Items. Nur für Owner sichtbar.
-          </p>
-        </div>
-        <Link
-          href="/dashboard/verwaltung/items"
-          className="rounded-lg border border-border px-3 py-2 text-xs font-medium transition hover:bg-surface-2"
-        >
-          Zurück zu Items
-        </Link>
-      </div>
+      <PageHeader
+        eyebrow="Verwaltung"
+        title="Kategorien"
+        description="Zum Einsortieren und Filtern der Items. Nur für Owner sichtbar."
+        action={
+          <Link
+            href="/dashboard/verwaltung/items"
+            className="rounded-lg border border-border px-3 py-2 text-xs font-medium transition hover:bg-surface-2"
+          >
+            Zurück zu Items
+          </Link>
+        }
+      />
 
       <div className="card p-5">
         <h2 className="mb-3 text-sm font-semibold">Neue Kategorie</h2>

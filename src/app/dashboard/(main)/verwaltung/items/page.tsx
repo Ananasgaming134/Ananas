@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
+import PageHeader from "@/components/PageHeader";
 import { deleteItem, refreshItemPrices } from "@/app/actions/items";
 import { formatCoins, PRICE_STATUS, ROLES } from "@/lib/constants";
 
@@ -52,41 +53,44 @@ export default async function VerwaltenPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Items verwalten</h1>
-          <p className="mt-1 text-sm text-muted">
+      <PageHeader
+        eyebrow="Verwaltung"
+        title="Items verwalten"
+        description={
+          <>
             Nur für Owner sichtbar.{" "}
             {isFiltered
               ? `${items.length} von ${totalCount} Items gefunden.`
               : `${totalCount} Items insgesamt.`}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {linkedCount > 0 && (
-            <form action={refreshItemPrices}>
-              <button
-                type="submit"
-                className="rounded-lg border border-border bg-surface-2 px-4 py-2 text-sm font-medium transition hover:bg-surface"
-              >
-                Preise aktualisieren ({linkedCount})
-              </button>
-            </form>
-          )}
-          <Link
-            href="/dashboard/verwaltung/items/kategorien"
-            className="rounded-lg border border-border bg-surface-2 px-4 py-2 text-sm font-medium transition hover:bg-surface"
-          >
-            Kategorien
-          </Link>
-          <Link
-            href="/dashboard/verwaltung/items/neu"
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110"
-          >
-            + Neues Item
-          </Link>
-        </div>
-      </div>
+          </>
+        }
+        action={
+          <div className="flex gap-2">
+            {linkedCount > 0 && (
+              <form action={refreshItemPrices}>
+                <button
+                  type="submit"
+                  className="rounded-lg border border-border bg-surface-2 px-4 py-2 text-sm font-medium transition hover:bg-surface"
+                >
+                  Preise aktualisieren ({linkedCount})
+                </button>
+              </form>
+            )}
+            <Link
+              href="/dashboard/verwaltung/items/kategorien"
+              className="rounded-lg border border-border bg-surface-2 px-4 py-2 text-sm font-medium transition hover:bg-surface"
+            >
+              Kategorien
+            </Link>
+            <Link
+              href="/dashboard/verwaltung/items/neu"
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110"
+            >
+              + Neues Item
+            </Link>
+          </div>
+        }
+      />
 
       {categories.length > 0 && (
         <form className="card flex flex-wrap items-center gap-3 p-4" method="GET">
