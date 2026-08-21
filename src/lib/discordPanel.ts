@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { DISCORD_BOT_TOKEN } from "@/lib/discord";
 import { LOAN_STATUS, SITE_NAME } from "@/lib/constants";
@@ -503,7 +504,9 @@ async function buildStatusPanelPayload() {
           ? `${activeLoans.length} aktive Ausleihe(n) · ${overdueCount} überfällig`
           : `${activeLoans.length} aktive Ausleihe(n)`,
     },
-    timestamp: new Date().toISOString(),
+    // Bewusst KEIN timestamp: der wuerde sich bei jedem Durchlauf aendern und
+    // die Nachricht immer als "geaendert" gelten lassen (siehe contentHash).
+    // Die Zeitangaben stehen ohnehin live in den Zeilen selbst.
   };
 
   return { embeds: [embed] };
@@ -542,6 +545,11 @@ type PostResult = { ok: true } | { ok: false; error: string };
 
 /** Postet eine Nachricht neu oder editiert eine vorhandene (per Message-ID) in einem Kanal. */
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Pruefsumme eines Nachrichten-Inhalts, um unveraenderte Nachrichten zu erkennen. */
+function hashPayload(payload: unknown): string {
+  return createHash("sha1").update(JSON.stringify(payload)).digest("hex");
+}
 
 /**
  * Fuehrt eine Discord-Anfrage aus und beachtet dabei das Rate-Limit: bei 429
@@ -598,6 +606,40 @@ async function deleteMessage(channelId: string, messageId: string): Promise<void
 }
 
 /**
+ * Loescht mehrere Nachrichten moeglichst in einem Rutsch. Einzeln geloescht
+ * frisst das bei ~20 Nachrichten das komplette Rate-Limit auf, sodass
+ * anschliessend nichts mehr gepostet werden kann. Discords Bulk-Delete
+ * schafft bis zu 100 Nachrichten pro Aufruf, gilt aber nur fuer Nachrichten,
+ * die juenger als 14 Tage sind - deshalb der Einzel-Fallback.
+ */
+async function deleteMessages(channelId: string, messageIds: string[]): Promise<void> {
+  if (messageIds.length === 0) return;
+
+  if (messageIds.length === 1) {
+    await deleteMessage(channelId, messageIds[0]);
+    return;
+  }
+
+  for (let i = 0; i < messageIds.length; i += 100) {
+    const chunk = messageIds.slice(i, i + 100);
+    const res = await discordFetch(`${DISCORD_API}/channels/${channelId}/messages/bulk-delete`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ messages: chunk }),
+    }).catch(() => null);
+
+    if (!res || !res.ok) {
+      // Aelter als 14 Tage oder Bulk-Delete nicht erlaubt -> einzeln, mit
+      // etwas Abstand, damit wir das Limit nicht komplett aufbrauchen.
+      for (const id of chunk) {
+        await deleteMessage(channelId, id);
+        await sleep(350);
+      }
+    }
+  }
+}
+
+/**
  * Postet bzw. aktualisiert das komplette Ausleih-Panel. Es besteht aus
  * mehreren Nachrichten (Kopfzeile, je eine pro Kategorie, aktuelle Ausleihen,
  * Suche) - siehe planPanelMessages.
@@ -630,13 +672,12 @@ export async function postOrUpdatePanel(deploymentId: string): Promise<PostResul
   // sauber neu posten. Die alte Einzel-Panel-Nachricht (panelMessageId aus der
   // Zeit vor dem Umbau) wird dabei ebenfalls entfernt.
   if (structureChanged) {
-    for (const message of existing) {
-      await deleteMessage(deployment.channelId, message.messageId);
-    }
-    await prisma.panelMessage.deleteMany({ where: { deploymentId } });
+    const toDelete = existing.map((m) => m.messageId);
+    if (deployment.panelMessageId) toDelete.push(deployment.panelMessageId);
+    await deleteMessages(deployment.channelId, toDelete);
 
+    await prisma.panelMessage.deleteMany({ where: { deploymentId } });
     if (deployment.panelMessageId) {
-      await deleteMessage(deployment.channelId, deployment.panelMessageId);
       await prisma.botDeployment.update({
         where: { id: deploymentId },
         data: { panelMessageId: null },
@@ -644,10 +685,10 @@ export async function postOrUpdatePanel(deploymentId: string): Promise<PostResul
     }
 
     for (const [index, item] of planned.entries()) {
-      // Discord erlaubt nur wenige Nachrichten pro Sekunde und Kanal. Ein
-      // kleiner Abstand haelt uns unter dem Limit; discordFetch faengt einen
-      // trotzdem auftretenden 429 zusaetzlich ab.
-      if (index > 0) await sleep(600);
+      // Discord erlaubt nur wenige Nachrichten pro Sekunde und Kanal. Der
+      // Abstand haelt uns unter dem Limit; discordFetch faengt einen trotzdem
+      // auftretenden 429 zusaetzlich ab.
+      if (index > 0) await sleep(1100);
 
       const result = await postOrUpdateMessage(deployment.channelId, null, item.payload);
       if (!result.ok) return result;
@@ -657,21 +698,32 @@ export async function postOrUpdatePanel(deploymentId: string): Promise<PostResul
           kind: item.kind,
           sortKey: item.sortKey,
           messageId: result.messageId,
+          contentHash: hashPayload(item.payload),
         },
       });
     }
     return { ok: true };
   }
 
-  // Normalfall: nur Inhalte aktualisieren.
+  // Normalfall: nur die Nachrichten anfassen, deren Inhalt sich tatsaechlich
+  // geaendert hat. Eine einzelne Ausleihe betrifft in der Regel genau zwei
+  // (die Kategorie des Items und die Liste der aktuellen Ausleihen) - alles
+  // andere unveraendert zu lassen haelt uns weit weg vom Rate-Limit.
+  let edited = 0;
   for (const item of planned) {
     const stored = existingByKey.get(item.sortKey);
+    const hash = hashPayload(item.payload);
+    if (stored && stored.contentHash === hash) continue;
+
+    if (edited > 0) await sleep(400);
     const result = await postOrUpdateMessage(deployment.channelId, stored?.messageId ?? null, item.payload);
     if (!result.ok) return result;
-    if (stored && result.messageId !== stored.messageId) {
+    edited += 1;
+
+    if (stored) {
       await prisma.panelMessage.update({
         where: { id: stored.id },
-        data: { messageId: result.messageId },
+        data: { messageId: result.messageId, contentHash: hash },
       });
     }
   }

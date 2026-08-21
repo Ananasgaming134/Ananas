@@ -340,6 +340,11 @@ model PanelMessage {
   kind         String        // HEADER | CATEGORY | STATUS | SEARCH
   sortKey      String
   messageId    String
+  // Pruefsumme des zuletzt gesendeten Inhalts. Beim Aktualisieren werden nur
+  // die Nachrichten wirklich editiert, deren Inhalt sich geaendert hat - sonst
+  // wuerde jede einzelne Ausleihe alle Panel-Nachrichten neu schreiben und
+  // sofort in Discords Rate-Limit laufen.
+  contentHash  String?
   createdAt    DateTime      @default(now())
 
   @@unique([deploymentId, sortKey])
