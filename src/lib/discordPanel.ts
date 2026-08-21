@@ -541,13 +541,31 @@ export function buildTicketPanelPayload() {
 type PostResult = { ok: true } | { ok: false; error: string };
 
 /** Postet eine Nachricht neu oder editiert eine vorhandene (per Message-ID) in einem Kanal. */
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Fuehrt eine Discord-Anfrage aus und beachtet dabei das Rate-Limit: bei 429
+ * wartet sie die von Discord genannte Zeit ab und versucht es erneut. Ohne
+ * das scheitert der Neuaufbau des Panels, sobald mehr als eine Handvoll
+ * Nachrichten kurz hintereinander gepostet werden.
+ */
+async function discordFetch(url: string, init: RequestInit, attempt = 0): Promise<Response> {
+  const res = await fetch(url, init);
+  if (res.status !== 429 || attempt >= 5) return res;
+
+  const body = (await res.json().catch(() => null)) as { retry_after?: number } | null;
+  const waitMs = Math.ceil((body?.retry_after ?? 1) * 1000) + 250;
+  await sleep(waitMs);
+  return discordFetch(url, init, attempt + 1);
+}
+
 async function postOrUpdateMessage(
   channelId: string,
   existingMessageId: string | null,
   payload: unknown
 ): Promise<{ ok: true; messageId: string } | { ok: false; error: string }> {
   if (existingMessageId) {
-    const res = await fetch(`${DISCORD_API}/channels/${channelId}/messages/${existingMessageId}`, {
+    const res = await discordFetch(`${DISCORD_API}/channels/${channelId}/messages/${existingMessageId}`, {
       method: "PATCH",
       headers: authHeaders(),
       body: JSON.stringify(payload),
@@ -556,7 +574,7 @@ async function postOrUpdateMessage(
     // Nachricht existiert nicht mehr (z.B. geloescht) -> neu posten.
   }
 
-  const res = await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {
+  const res = await discordFetch(`${DISCORD_API}/channels/${channelId}/messages`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify(payload),
@@ -573,7 +591,7 @@ async function postOrUpdateMessage(
 
 /** Loescht eine Nachricht - ein 404 ist kein Fehler (schon weg = Ziel erreicht). */
 async function deleteMessage(channelId: string, messageId: string): Promise<void> {
-  await fetch(`${DISCORD_API}/channels/${channelId}/messages/${messageId}`, {
+  await discordFetch(`${DISCORD_API}/channels/${channelId}/messages/${messageId}`, {
     method: "DELETE",
     headers: authHeaders(),
   }).catch(() => {});
@@ -625,7 +643,12 @@ export async function postOrUpdatePanel(deploymentId: string): Promise<PostResul
       });
     }
 
-    for (const item of planned) {
+    for (const [index, item] of planned.entries()) {
+      // Discord erlaubt nur wenige Nachrichten pro Sekunde und Kanal. Ein
+      // kleiner Abstand haelt uns unter dem Limit; discordFetch faengt einen
+      // trotzdem auftretenden 429 zusaetzlich ab.
+      if (index > 0) await sleep(600);
+
       const result = await postOrUpdateMessage(deployment.channelId, null, item.payload);
       if (!result.ok) return result;
       await prisma.panelMessage.create({
