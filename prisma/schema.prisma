@@ -322,6 +322,28 @@ model BotDeployment {
 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  panelMessages   PanelMessage[]
+}
+
+// Eine einzelne Nachricht des Ausleih-Panels. Statt einer einzigen Nachricht
+// (die bei grossem Bestand am 6000-Zeichen-Limit scheitert) besteht das Panel
+// aus mehreren: Kopfzeile, je eine Nachricht pro Kategorie (bei mehr als 25
+// Items zusaetzlich seitenweise), die Liste der aktuellen Ausleihen und ganz
+// unten die Suche. sortKey haelt die Reihenfolge stabil und dient als
+// Wiedererkennung beim Aktualisieren - aendert sich die Struktur (Kategorie
+// dazu/weg), wird das Panel komplett neu aufgebaut, sonst nur editiert.
+model PanelMessage {
+  id           String        @id @default(cuid())
+  deploymentId String
+  deployment   BotDeployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  kind         String        // HEADER | CATEGORY | STATUS | SEARCH
+  sortKey      String
+  messageId    String
+  createdAt    DateTime      @default(now())
+
+  @@unique([deploymentId, sortKey])
+  @@index([deploymentId])
 }
 
 // Bewerbung um Kunde zu werden - eingereicht per Website oder Discord

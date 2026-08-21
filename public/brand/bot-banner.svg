@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#161a23"/>
+      <stop offset="60%" stop-color="#0d0f14"/>
+      <stop offset="100%" stop-color="#0a0c11"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f2b544" stop-opacity="0"/>
+      <stop offset="35%" stop-color="#f2b544"/>
+      <stop offset="65%" stop-color="#3ddc97"/>
+      <stop offset="100%" stop-color="#3ddc97" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="60"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="540" fill="url(#bg)"/>
+
+  <!-- Lichtstimmung -->
+  <circle cx="729.6" cy="216" r="180" fill="#f2b544" opacity="0.26" filter="url(#glow)"/>
+  <circle cx="192" cy="410.4" r="150" fill="#3ddc97" opacity="0.14" filter="url(#glow)"/>
+
+  <!-- dezentes Raster -->
+  <g opacity="0.055" stroke="#ffffff" stroke-width="1">
+    <line x1="0" y1="0" x2="0" y2="540"/>
+    <line x1="52" y1="0" x2="52" y2="540"/>
+    <line x1="104" y1="0" x2="104" y2="540"/>
+    <line x1="156" y1="0" x2="156" y2="540"/>
+    <line x1="208" y1="0" x2="208" y2="540"/>
+    <line x1="260" y1="0" x2="260" y2="540"/>
+    <line x1="312" y1="0" x2="312" y2="540"/>
+    <line x1="364" y1="0" x2="364" y2="540"/>
+    <line x1="416" y1="0" x2="416" y2="540"/>
+    <line x1="468" y1="0" x2="468" y2="540"/>
+    <line x1="520" y1="0" x2="520" y2="540"/>
+    <line x1="572" y1="0" x2="572" y2="540"/>
+    <line x1="624" y1="0" x2="624" y2="540"/>
+    <line x1="676" y1="0" x2="676" y2="540"/>
+    <line x1="728" y1="0" x2="728" y2="540"/>
+    <line x1="780" y1="0" x2="780" y2="540"/>
+    <line x1="832" y1="0" x2="832" y2="540"/>
+    <line x1="884" y1="0" x2="884" y2="540"/>
+    <line x1="936" y1="0" x2="936" y2="540"/>
+    <line x1="0" y1="0" x2="960" y2="0"/>
+    <line x1="0" y1="52" x2="960" y2="52"/>
+    <line x1="0" y1="104" x2="960" y2="104"/>
+    <line x1="0" y1="156" x2="960" y2="156"/>
+    <line x1="0" y1="208" x2="960" y2="208"/>
+    <line x1="0" y1="260" x2="960" y2="260"/>
+    <line x1="0" y1="312" x2="960" y2="312"/>
+    <line x1="0" y1="364" x2="960" y2="364"/>
+    <line x1="0" y1="416" x2="960" y2="416"/>
+    <line x1="0" y1="468" x2="960" y2="468"/>
+    <line x1="0" y1="520" x2="960" y2="520"/>
+  </g>
+
+  
+  <g transform="translate(748.8000000000001 248.4)" opacity="1">
+    <!-- Korpus: linke und rechte Seitenflaeche -->
+    <path d="M -145 0 L 0 72.5 L 0 194.3 L -145 121.8 Z" fill="#c98d1f"/>
+    <path d="M 145 0 L 0 72.5 L 0 194.3 L 145 121.8 Z" fill="#a8741a"/>
+
+    <!-- Oeffnung oben: dunkler Innenraum mit gruenem Leuchten -->
+    <path d="M -145 0 L 0 -72.5 L 145 0 L 0 72.5 Z" fill="#0b0d12"/>
+    <path d="M -104.39999999999999 0 L 0 -52.199999999999996 L 104.39999999999999 0 L 0 52.199999999999996 Z" fill="#3ddc97" opacity="0.9"/>
+    <path d="M -58 0 L 0 -29 L 58 0 L 0 29 Z" fill="#a8ffdc" opacity="0.85"/>
+
+    <!-- schwebender Deckel mit etwas Materialstaerke -->
+    <path d="M -145 -98.60000000000001 L 0 -26.10000000000001 L 145 -98.60000000000001 L 0 -171.10000000000002 Z" fill="#f2b544"/>
+    <path d="M -145 -98.60000000000001 L 0 -26.10000000000001 L 0 -11.600000000000009 L -145 -84.10000000000001 Z"
+          fill="#c98d1f"/>
+    <path d="M 145 -98.60000000000001 L 0 -26.10000000000001 L 0 -11.600000000000009 L 145 -84.10000000000001 Z"
+          fill="#a8741a"/>
+  </g>
+  
+  <g transform="translate(576 91.80000000000001)" opacity="0.2">
+    <!-- Korpus: linke und rechte Seitenflaeche -->
+    <path d="M -48 0 L 0 24 L 0 64.32 L -48 40.32 Z" fill="#c98d1f"/>
+    <path d="M 48 0 L 0 24 L 0 64.32 L 48 40.32 Z" fill="#a8741a"/>
+
+    <!-- Oeffnung oben: dunkler Innenraum mit gruenem Leuchten -->
+    <path d="M -48 0 L 0 -24 L 48 0 L 0 24 Z" fill="#0b0d12"/>
+    <path d="M -34.56 0 L 0 -17.28 L 34.56 0 L 0 17.28 Z" fill="#3ddc97" opacity="0.9"/>
+    <path d="M -19.200000000000003 0 L 0 -9.600000000000001 L 19.200000000000003 0 L 0 9.600000000000001 Z" fill="#a8ffdc" opacity="0.85"/>
+
+    <!-- schwebender Deckel mit etwas Materialstaerke -->
+    <path d="M -48 -32.64 L 0 -8.64 L 48 -32.64 L 0 -56.64 Z" fill="#f2b544"/>
+    <path d="M -48 -32.64 L 0 -8.64 L 0 -3.84 L -48 -27.84 Z"
+          fill="#c98d1f"/>
+    <path d="M 48 -32.64 L 0 -8.64 L 0 -3.84 L 48 -27.84 Z"
+          fill="#a8741a"/>
+  </g>
+
+  <!-- Text -->
+  <text x="72" y="212" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="30" font-weight="600" fill="#f2b544" letter-spacing="7">OPSUCHT</text>
+  <text x="72" y="300" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="82" font-weight="700" fill="#ffffff" letter-spacing="1">OP-LeihCenter</text>
+  <text x="72" y="352" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="27" font-weight="400" fill="#9aa4b8">Leih dir die besten Items — direkt hier im Discord.</text>
+
+  <rect x="72" y="392" width="330" height="4" rx="2" fill="url(#line)"/>
+
+  <!-- Statuspunkt bewusst als Kreis statt Emoji: das Rendering haengt sonst
+       davon ab, ob auf dem Rechner ein Farb-Emoji-Font installiert ist. -->
+  <circle cx="80" cy="439" r="8" fill="#3ddc97"/>
+  <text x="102" y="446" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="23" fill="#3ddc97">Live-Verfügbarkeit</text>
+  <text x="292" y="446" font-family="Segoe UI, Arial, Helvetica, sans-serif"
+        font-size="23" fill="#9aa4b8">· 2 Std. Leihdauer · Abo-System</text>
+</svg>

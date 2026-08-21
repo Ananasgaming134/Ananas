@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="72%">
+      <stop offset="0%" stop-color="#161a23"/>
+      <stop offset="100%" stop-color="#0d0f14"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f2b544"/>
+      <stop offset="55%" stop-color="#3ddc97"/>
+      <stop offset="100%" stop-color="#f2b544"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="46"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- weicher Schein hinter der Kiste -->
+  <circle cx="512" cy="422" r="230" fill="#f2b544" opacity="0.22" filter="url(#soft)"/>
+
+  <!-- Akzentring -->
+  <circle cx="512" cy="512" r="452" fill="none" stroke="url(#ring)" stroke-width="20" opacity="0.92"/>
+  <circle cx="512" cy="512" r="418" fill="none" stroke="#f2b544" stroke-width="3" opacity="0.28"/>
+
+  
+  <g transform="translate(512 367)" opacity="1">
+    <!-- Korpus: linke und rechte Seitenflaeche -->
+    <path d="M -190 0 L 0 95 L 0 254.6 L -190 159.6 Z" fill="#c98d1f"/>
+    <path d="M 190 0 L 0 95 L 0 254.6 L 190 159.6 Z" fill="#a8741a"/>
+
+    <!-- Oeffnung oben: dunkler Innenraum mit gruenem Leuchten -->
+    <path d="M -190 0 L 0 -95 L 190 0 L 0 95 Z" fill="#0b0d12"/>
+    <path d="M -136.79999999999998 0 L 0 -68.39999999999999 L 136.79999999999998 0 L 0 68.39999999999999 Z" fill="#3ddc97" opacity="0.9"/>
+    <path d="M -76 0 L 0 -38 L 76 0 L 0 38 Z" fill="#a8ffdc" opacity="0.85"/>
+
+    <!-- schwebender Deckel mit etwas Materialstaerke -->
+    <path d="M -190 -129.20000000000002 L 0 -34.20000000000002 L 190 -129.20000000000002 L 0 -224.20000000000002 Z" fill="#f2b544"/>
+    <path d="M -190 -129.20000000000002 L 0 -34.20000000000002 L 0 -15.200000000000017 L -190 -110.20000000000002 Z"
+          fill="#c98d1f"/>
+    <path d="M 190 -129.20000000000002 L 0 -34.20000000000002 L 0 -15.200000000000017 L 190 -110.20000000000002 Z"
+          fill="#a8741a"/>
+  </g>
+
+  <!-- Schriftzug -->
+  <text x="512" y="697" text-anchor="middle"
+        font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="96" font-weight="700"
+        fill="#ffffff" letter-spacing="8">LEIH</text>
+  <text x="512" y="797" text-anchor="middle"
+        font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="96" font-weight="700"
+        fill="#f2b544" letter-spacing="8">CENTER</text>
+</svg>
