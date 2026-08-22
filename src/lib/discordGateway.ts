@@ -11,6 +11,29 @@ const globalForGateway = globalThis as unknown as { discordGatewayClient?: Clien
 const CHECK = "✅";
 const CROSS = "❌";
 
+/**
+ * Haelt offene Ticket-Threads wach: schreibt jemand in einen Thread, der
+ * bereits archiviert wurde, wird er sofort wieder geoeffnet und die
+ * Auto-Archiv-Zeit aufs Maximum gesetzt. Geschlossene Tickets bleiben
+ * archiviert - die sollen ja einschlafen.
+ */
+async function keepTicketThreadAlive(channelId: string) {
+  const ticket = await prisma.ticket.findFirst({
+    where: { discordChannelId: channelId, status: { not: "CLOSED" } },
+    select: { id: true },
+  });
+  if (!ticket) return;
+
+  await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ archived: false, auto_archive_duration: 10080 }),
+  }).catch(() => {});
+}
+
 async function handleMessage(message: {
   author: { id: string; bot: boolean; send: (payload: { content: string }) => Promise<unknown> };
   channelId: string;
@@ -18,6 +41,9 @@ async function handleMessage(message: {
   react: (emoji: string) => Promise<unknown>;
 }) {
   if (message.author.bot) return;
+
+  void keepTicketThreadAlive(message.channelId).catch(() => {});
+
   if (!WORTKETTEN_CHANNEL_ID || message.channelId !== WORTKETTEN_CHANNEL_ID) return;
 
   try {
@@ -128,11 +154,12 @@ export function startDiscordGateway() {
     console.error("[gateway] Gateway-Fehler:", err);
   });
 
-  if (WORTKETTEN_CHANNEL_ID) {
-    client.on("messageCreate", (message) => {
-      void handleMessage(message);
-    });
-  } else {
+  // Immer registrieren: der Handler haelt auch offene Ticket-Threads wach,
+  // unabhaengig davon ob das Wortkettenspiel eingerichtet ist.
+  client.on("messageCreate", (message) => {
+    void handleMessage(message);
+  });
+  if (!WORTKETTEN_CHANNEL_ID) {
     console.warn("[wortkette] Kein DISCORD_WORTKETTEN_CHANNEL_ID gesetzt - Wortkettenspiel deaktiviert.");
   }
 

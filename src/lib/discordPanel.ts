@@ -9,8 +9,8 @@ import {
   ITEM_SEARCH_SELECT_ID,
   NO_CATEGORY_VALUE,
   PANEL_SEARCH_BUTTON_ID,
-  TICKET_OPEN_BEWERBUNG_ID,
   TICKET_OPEN_SUPPORT_ID,
+  TICKET_OPEN_VERLEIH_ID,
 } from "@/lib/discordInteractions";
 
 const MAX_SELECT_OPTIONS = 25; // Discord-Select-Menues erlauben maximal 25 Optionen
@@ -513,18 +513,26 @@ async function buildStatusPanelPayload() {
 }
 
 /**
- * Baut das Ticket-Panel (zwei Buttons: Support / Bewerbung). Wird nur in
- * dem Kanal gepostet, den der Owner dafuer eingerichtet hat - Sichtbarkeit
- * fuer die Kunde-Rolle wird separat per Discord-Berechtigung gesteuert
- * (BotDeployment.ticketsVisibleToCustomers), nicht ueber den Panel-Inhalt.
+ * Baut das Ticket-Panel mit den zwei Ticket-Arten. Ein Klick oeffnet jeweils
+ * ein Formular; nach dem Absenden entsteht ein privater Thread in genau
+ * diesem Kanal, und im Claim-Kanal wird die zustaendige Rolle benachrichtigt.
  */
 export function buildTicketPanelPayload() {
   const embed = {
-    title: `🎫 ${SITE_NAME} — Tickets`,
-    description:
-      "**🎧 Support** — allgemeine Fragen/Probleme, z.B. Abo pausieren.\n" +
-      "**📝 Bewerbung** — Kunde beim LeihCenter werden.",
+    title: `🎫  ${SITE_NAME}  ·  Tickets`,
+    description: [
+      "Du brauchst was von uns? Wähl unten aus, worum es geht — wir melden uns im Ticket.",
+      "",
+      "**🎫  Support-Ticket**",
+      "> Fragen, Probleme, Abo pausieren, alles andere.",
+      "",
+      "**📦  Verleih-Service**",
+      "> Du willst Kunde werden und Items ausleihen. Wir fragen kurz ein paar Sachen ab.",
+      "",
+      "Nach dem Absenden bekommst du einen **privaten Thread**, den nur du und das Team sehen.",
+    ].join("\n"),
     color: 0x3ddc97,
+    footer: { text: "Bitte pro Anliegen nur ein Ticket öffnen." },
   };
 
   return {
@@ -533,8 +541,8 @@ export function buildTicketPanelPayload() {
       {
         type: 1,
         components: [
-          { type: 2, style: 1, label: "🎧 Support", custom_id: TICKET_OPEN_SUPPORT_ID },
-          { type: 2, style: 1, label: "📝 Bewerbung", custom_id: TICKET_OPEN_BEWERBUNG_ID },
+          { type: 2, style: 1, label: "🎫 Support-Ticket", custom_id: TICKET_OPEN_SUPPORT_ID },
+          { type: 2, style: 3, label: "📦 Verleih-Service", custom_id: TICKET_OPEN_VERLEIH_ID },
         ],
       },
     ],

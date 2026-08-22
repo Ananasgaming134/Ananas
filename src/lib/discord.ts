@@ -13,6 +13,41 @@ export function roleIdsFromEnv(name: string): string[] {
     .filter(Boolean);
 }
 
+// --- Ticketsystem -----------------------------------------------------------
+// Kanaele und Rollen fuer das Ticketsystem. Die Werte sind fest vorgegeben,
+// lassen sich aber per Umgebungsvariable ueberschreiben (z.B. fuer einen
+// Testserver), ohne dass dafuer Code geaendert werden muss.
+
+/** Kanal mit dem Ticket-Panel - hier entstehen auch die privaten Ticket-Threads. */
+export const TICKET_PANEL_CHANNEL_ID =
+  process.env.DISCORD_TICKET_PANEL_CHANNEL_ID ?? "1540827502963068958";
+
+/** Staff-Kanal, in dem neue Tickets zum Claimen gemeldet werden. */
+export const TICKET_CLAIM_CHANNEL_ID =
+  process.env.DISCORD_TICKET_CLAIM_CHANNEL_ID ?? "1540827374357057586";
+
+/** Rolle, die Support- UND Verleih-Tickets claimen darf. */
+export const TICKET_CLAIM_ROLE_ID =
+  process.env.DISCORD_TICKET_CLAIM_ROLE_ID ?? "1469722757196677200";
+
+/** Owner-Rollen: duerfen immer alles - claimen, verwalten, direkt schliessen. */
+export function ticketOwnerRoleIds(): string[] {
+  const fromEnv = roleIdsFromEnv("DISCORD_TICKET_OWNER_ROLE_IDS");
+  if (fromEnv.length > 0) return fromEnv;
+  return ["1469712028049346743", "1477054018097385514"];
+}
+
+/** Darf diese Person Tickets claimen/verwalten? Owner immer, sonst Claim-Rolle. */
+export function canClaimTicket(memberRoles: string[]): boolean {
+  if (memberRoles.some((r) => ticketOwnerRoleIds().includes(r))) return true;
+  return memberRoles.includes(TICKET_CLAIM_ROLE_ID);
+}
+
+/** Owner duerfen Tickets auch ohne Claim direkt schliessen. */
+export function isTicketOwner(memberRoles: string[]): boolean {
+  return memberRoles.some((r) => ticketOwnerRoleIds().includes(r));
+}
+
 function mapRolesToLeihCenterRole(roles: string[]): RoleValue | null {
   const ownerIds = roleIdsFromEnv("DISCORD_ROLE_OWNER");
   const aufsichtIds = roleIdsFromEnv("DISCORD_ROLE_AUFSICHT");
@@ -612,6 +647,10 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
             description: "Postet/aktualisiert das Ticket-Panel (Support/Bewerbung) in diesem Kanal",
           },
         ],
+      },
+      {
+        name: "setup-tickets",
+        description: "Postet das Ticket-Panel (Support + Verleih-Service) in den Ticket-Kanal (nur Owner)",
       },
       {
         name: "ticket",

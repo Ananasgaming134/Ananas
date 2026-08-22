@@ -3,7 +3,12 @@ import { logAction } from "@/lib/audit";
 import { DISCORD_GUILD_ID, grantGuildRole, roleIdsFromEnv } from "@/lib/discord";
 import { generateCustomerNumber } from "@/lib/customerNumber";
 import { startGracePeriodIfNeeded } from "@/lib/accessControl";
-import { TICKET_CATEGORY, closeTicketCore, createTicketCore } from "@/lib/tickets";
+import {
+  TICKET_CATEGORY,
+  closeTicketCore,
+  createTicketCore,
+  type TicketCategoryValue,
+} from "@/lib/tickets";
 import { MEMBER_STATUS, ROLES, getSubscriptionPlan } from "@/lib/constants";
 
 export type ApplicationItemInput = {
@@ -25,6 +30,8 @@ export type CreateApplicationInput = {
   minecraftName: string;
   age: number;
   playHours: number;
+  /** Antwort auf die Bannhistorie-Frage aus dem Verleih-Ticket. */
+  banHistory?: string | null;
   items?: ApplicationItemInput[];
 };
 
@@ -82,6 +89,7 @@ export async function createApplicationCore(input: CreateApplicationInput): Prom
       minecraftName: input.minecraftName,
       age: input.age,
       playHours: input.playHours,
+      banHistory: input.banHistory ?? null,
       items:
         input.items && input.items.length > 0
           ? {
@@ -111,20 +119,44 @@ export async function createApplicationCore(input: CreateApplicationInput): Prom
  * es mit der Bewerbung. Gemeinsam genutzt von der Website
  * (applyForMembership) und dem Discord-Modal (/bewerben).
  */
-export async function applyAndOpenTicketCore(input: CreateApplicationInput): Promise<CreateApplicationResult> {
+export async function applyAndOpenTicketCore(
+  input: CreateApplicationInput & { ticketCategory?: TicketCategoryValue }
+): Promise<CreateApplicationResult> {
   const result = await createApplicationCore(input);
   if (!result.ok) return result;
 
+  const category = input.ticketCategory ?? TICKET_CATEGORY.BEWERBUNG;
+  const subject =
+    category === TICKET_CATEGORY.VERLEIH
+      ? `Verleih-Anfrage von ${input.displayName}`
+      : `Bewerbung von ${input.displayName}`;
+
+  // Die Antworten stehen sonst nur auf der Website - im Thread selbst spart
+  // das dem Team den Seitenwechsel.
+  const details = [
+    `**Minecraft-Name:** ${input.minecraftName}`,
+    `**Alter:** ${input.age}`,
+    `**Gesamtvermögen:** ${input.declaredNetWorth.toLocaleString("de-DE")}`,
+    `**Spielzeit:** ${input.playHours}`,
+    `**Bannhistorie:** ${input.banHistory?.trim() || "keine Angabe"}`,
+  ].join("\n");
+
   const ticket = await createTicketCore({
-    category: TICKET_CATEGORY.BEWERBUNG,
-    subject: `Bewerbung von ${input.displayName}`,
+    category,
+    subject,
     applicantDiscordId: input.discordId,
     applicationId: result.applicationId,
+    initialMessage: category === TICKET_CATEGORY.VERLEIH ? details : null,
   });
   if (ticket.ok) {
     await prisma.membershipApplication
       .update({ where: { id: result.applicationId }, data: { ticketId: ticket.ticketId } })
       .catch(() => {});
+  } else {
+    // Ohne Ticket bliebe eine Bewerbung zurueck, die niemand sieht und die
+    // eine erneute Anfrage blockiert - deshalb sauber zuruecknehmen.
+    await prisma.membershipApplication.delete({ where: { id: result.applicationId } }).catch(() => {});
+    return { ok: false, error: ticket.error };
   }
 
   return result;

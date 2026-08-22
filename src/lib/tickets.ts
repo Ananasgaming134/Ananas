@@ -1,8 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import {
+  TICKET_CLAIM_CHANNEL_ID,
+  TICKET_CLAIM_ROLE_ID,
+  TICKET_PANEL_CHANNEL_ID,
   addThreadMember,
   archiveThread,
+  canClaimTicket,
   createTicketCategory,
   createTicketChannel,
   createTicketThread,
@@ -12,7 +16,12 @@ import {
   revokeChannelSendPermission,
   roleIdsFromEnv,
 } from "@/lib/discord";
-import { TICKET_CLAIM_PREFIX, TICKET_CLOSE_PREFIX } from "@/lib/discordInteractions";
+import {
+  TICKET_CLAIM_PREFIX,
+  TICKET_CLOSE_CONFIRM_PREFIX,
+  TICKET_CLOSE_DECLINE_PREFIX,
+  TICKET_CLOSE_REQUEST_PREFIX,
+} from "@/lib/discordInteractions";
 import type { BotDeployment } from "@prisma/client";
 
 const DISCORD_API = "https://discord.com/api/v10";
@@ -21,17 +30,20 @@ function authHeaders() {
   return { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" };
 }
 
-export const TICKET_CATEGORY = { SUPPORT: "SUPPORT", BEWERBUNG: "BEWERBUNG" } as const;
+export const TICKET_CATEGORY = {
+  SUPPORT: "SUPPORT",
+  BEWERBUNG: "BEWERBUNG",
+  VERLEIH: "VERLEIH",
+} as const;
 export type TicketCategoryValue = (typeof TICKET_CATEGORY)[keyof typeof TICKET_CATEGORY];
 
 export const TICKET_STATUS = { OPEN: "OPEN", CLAIMED: "CLAIMED", CLOSED: "CLOSED" } as const;
 
-function claimRoleIdsFor(deployment: BotDeployment, category: TicketCategoryValue): string[] {
-  const raw = category === TICKET_CATEGORY.SUPPORT ? deployment.supportClaimRoleIds : deployment.bewerbungClaimRoleIds;
-  return (raw ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+/** Anzeigename samt Emoji je Ticket-Art - einheitlich in Panel, Thread und Claim-Kanal. */
+export function ticketLabel(category: string): string {
+  if (category === TICKET_CATEGORY.VERLEIH) return "📦 Verleih-Service";
+  if (category === TICKET_CATEGORY.BEWERBUNG) return "📝 Bewerbung";
+  return "🎫 Support";
 }
 
 export type CreateTicketInput = {
@@ -112,20 +124,22 @@ async function provisionTicketChannel(
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket || ticket.discordChannelId) return;
 
-  const prefix = ticket.category === TICKET_CATEGORY.BEWERBUNG ? "bewerbung" : "ticket";
+  const prefix =
+    ticket.category === TICKET_CATEGORY.VERLEIH
+      ? "verleih"
+      : ticket.category === TICKET_CATEGORY.BEWERBUNG
+        ? "bewerbung"
+        : "support";
   const channelName = `${prefix}-${ticket.id.slice(-6)}`;
 
-  // Bevorzugt als privater Thread unter dem Ticket-Panel-Kanal (haelt die
-  // Kanalliste sauber). Nur wenn kein Panel-Kanal eingerichtet ist bzw. das
-  // Anlegen scheitert, faellt es auf einen eigenen Kanal in der
-  // Ticket-Kategorie zurueck - beides liefert eine Kanal-ID, unter der sich
-  // Nachrichten posten lassen, der Rest des Codes bleibt gleich.
+  // Tickets laufen als private Threads im Ticket-Panel-Kanal. Nur wenn das
+  // scheitert (fehlende Rechte o.ae.), faellt es auf einen eigenen Kanal in
+  // der Ticket-Kategorie zurueck - beides liefert eine Kanal-ID, unter der
+  // sich Nachrichten posten lassen, der Rest des Codes bleibt gleich.
   let channelId: string | null = null;
 
-  // Eltern-Kanal fuer den Thread: bevorzugt der Ticket-Panel-Kanal (dort hat
-  // die Person das Ticket geoeffnet), ersatzweise der Ausleih-Panel-Kanal -
-  // beide sind fuer Kunden sichtbar, was Discord fuer Thread-Zugriff braucht.
-  const threadParentId = deployment.ticketPanelChannelId ?? deployment.channelId;
+  const threadParentId =
+    TICKET_PANEL_CHANNEL_ID || deployment.ticketPanelChannelId || deployment.channelId;
   if (threadParentId) {
     const thread = await createTicketThread(threadParentId, channelName, ticket.applicantDiscordId);
     if (thread.ok) channelId = thread.threadId;
@@ -151,21 +165,34 @@ async function provisionTicketChannel(
 
   await prisma.ticket.update({ where: { id: ticket.id }, data: { discordChannelId: channelId } });
 
-  let content = buildTicketIntro(ticket.category as TicketCategoryValue, ticket.subject);
-  if (initialMessage) content += `\n\n${initialMessage}`;
+  const embed = {
+    title: `${ticketLabel(ticket.category)} — ${ticket.subject}`,
+    description:
+      (initialMessage ? `${initialMessage}\n\n` : "") +
+      `<@${ticket.applicantDiscordId}>, danke für dein Ticket! Ein Teammitglied übernimmt es gleich.`,
+    color: ticket.category === TICKET_CATEGORY.VERLEIH ? 0xf2b544 : 0x3ddc97,
+    footer: { text: `Ticket ${ticket.id.slice(-6)}` },
+  };
 
   await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({
-      content,
-      // allowed_mentions leer: der Intro-Text soll niemanden anpingen -
-      // insbesondere keine Dev-/Staff-Rollen, die hier nichts zu tun haben.
-      allowed_mentions: { parse: [] },
+      // Nur der Ersteller wird erwaehnt - keine Rollen-Pings im Thread.
+      content: `<@${ticket.applicantDiscordId}>`,
+      embeds: [embed],
+      allowed_mentions: { users: [ticket.applicantDiscordId] },
       components: [
         {
           type: 1,
-          components: [{ type: 2, style: 4, label: "🔒 Schließen", custom_id: `${TICKET_CLOSE_PREFIX}${ticket.id}` }],
+          components: [
+            {
+              type: 2,
+              style: 2,
+              label: "🔒 Schließanfrage senden",
+              custom_id: `${TICKET_CLOSE_REQUEST_PREFIX}${ticket.id}`,
+            },
+          ],
         },
       ],
     }),
@@ -186,30 +213,39 @@ async function postToQueue(
   subject: string,
   deployment: BotDeployment
 ): Promise<void> {
-  let queueChannelId = deployment.ticketQueueChannelId;
+  let queueChannelId = TICKET_CLAIM_CHANNEL_ID || deployment.ticketQueueChannelId;
   if (!queueChannelId) {
-    const allClaimRoleIds = [
-      ...claimRoleIdsFor(deployment, TICKET_CATEGORY.SUPPORT),
-      ...claimRoleIdsFor(deployment, TICKET_CATEGORY.BEWERBUNG),
-    ];
-    const created = await ensureTicketQueueChannel(deployment.guildId, [...new Set(allClaimRoleIds)]);
+    const created = await ensureTicketQueueChannel(deployment.guildId, [TICKET_CLAIM_ROLE_ID]);
     if (!created.ok) return;
     queueChannelId = created.channelId;
     await prisma.botDeployment.update({ where: { id: deployment.id }, data: { ticketQueueChannelId: queueChannelId } });
   }
 
-  const label = category === TICKET_CATEGORY.BEWERBUNG ? "📝 Bewerbung" : "🎧 Support";
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  const threadLink = ticket?.discordChannelId ? `\n<#${ticket.discordChannelId}>` : "";
+
   const res = await fetch(`${DISCORD_API}/channels/${queueChannelId}/messages`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({
-      content: `${label} — **${subject}**`,
-      // Bewusst kein Rollen-Ping: wer zustaendig ist, sieht den Kanal ohnehin.
-      allowed_mentions: { parse: [] },
+      // Zustaendige Rolle wird hier bewusst angepingt - das ist der
+      // Arbeitskanal des Teams, hier soll die Meldung auffallen.
+      content: `<@&${TICKET_CLAIM_ROLE_ID}>`,
+      embeds: [
+        {
+          title: `${ticketLabel(category)} — neues Ticket`,
+          description: `**${subject}**\nVon <@${ticket?.applicantDiscordId ?? "?"}>${threadLink}`,
+          color: category === TICKET_CATEGORY.VERLEIH ? 0xf2b544 : 0x3ddc97,
+          footer: { text: "Noch nicht übernommen" },
+        },
+      ],
+      allowed_mentions: { roles: [TICKET_CLAIM_ROLE_ID] },
       components: [
         {
           type: 1,
-          components: [{ type: 2, style: 3, label: "🙋 Claimen", custom_id: `${TICKET_CLAIM_PREFIX}${ticketId}` }],
+          components: [
+            { type: 2, style: 3, label: "🙋 Ticket claimen", custom_id: `${TICKET_CLAIM_PREFIX}${ticketId}` },
+          ],
         },
       ],
     }),
@@ -220,26 +256,29 @@ async function postToQueue(
   await prisma.ticket.update({ where: { id: ticketId }, data: { queueMessageId: message.id } }).catch(() => {});
 }
 
-function buildTicketIntro(category: TicketCategoryValue, subject: string): string {
-  return category === TICKET_CATEGORY.BEWERBUNG
-    ? `📝 **Neue Bewerbung** — ${subject}\nDetails stehen in der Bewerbungs-Übersicht auf der Website (Verwaltung → Bewerbungen).`
-    : `🎧 **Neues Support-Ticket** — ${subject}`;
-}
-
 export type TicketActionResult = { ok: true } | { ok: false; error: string };
 
-/** Prueft, ob eine Person (Owner oder eine der Claim-Rollen) ein Ticket dieser Kategorie claimen/bearbeiten darf. */
+/**
+ * Prueft, ob eine Person ein Ticket claimen/bearbeiten darf: die
+ * konfigurierte Claim-Rolle (fuer Support UND Verleih dieselbe) oder eine der
+ * Owner-Rollen, die immer alles duerfen. Zusaetzlich gelten weiterhin die im
+ * Deployment hinterlegten Rollen und die DISCORD_ROLE_OWNER-Rollen, damit
+ * bestehende Einrichtungen nicht ploetzlich ausgesperrt sind.
+ */
 export function canManageTicket(
-  category: TicketCategoryValue,
-  deployment: Pick<BotDeployment, "supportClaimRoleIds" | "bewerbungClaimRoleIds">,
+  _category: TicketCategoryValue,
+  deployment: Pick<BotDeployment, "supportClaimRoleIds" | "bewerbungClaimRoleIds"> | null,
   memberRoles: string[]
 ): boolean {
+  if (canClaimTicket(memberRoles)) return true;
+
   const ownerIds = roleIdsFromEnv("DISCORD_ROLE_OWNER");
   if (memberRoles.some((r) => ownerIds.includes(r))) return true;
 
-  const raw = category === TICKET_CATEGORY.SUPPORT ? deployment.supportClaimRoleIds : deployment.bewerbungClaimRoleIds;
-  const claimRoleIds = (raw ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  return memberRoles.some((r) => claimRoleIds.includes(r));
+  const legacy = [deployment?.supportClaimRoleIds, deployment?.bewerbungClaimRoleIds]
+    .flatMap((raw) => (raw ?? "").split(",").map((s) => s.trim()))
+    .filter(Boolean);
+  return memberRoles.some((r) => legacy.includes(r));
 }
 
 /**
@@ -262,22 +301,50 @@ export async function claimTicketCore(ticketId: string, actorId: string): Promis
     data: { status: TICKET_STATUS.CLAIMED, claimedById: actorId, claimedAt: new Date() },
   });
 
+  const claimerLabel = actor?.displayName ?? "jemandem";
+
   if (ticket.discordChannelId && actor) {
     // Bei einem Thread greift die Kanal-Berechtigung nicht - dort muss die
     // Person als Thread-Mitglied aufgenommen werden. Beides versuchen, je
     // nachdem ob das Ticket als Thread oder als eigener Kanal laeuft.
     await addThreadMember(ticket.discordChannelId, actor.discordId).catch(() => {});
     await grantChannelMemberAccess(ticket.discordChannelId, actor.discordId).catch(() => {});
+
+    // Sichtbare Bestaetigung im Ticket selbst, damit der Ersteller weiss,
+    // wer sich kuemmert.
+    await fetch(`${DISCORD_API}/channels/${ticket.discordChannelId}/messages`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        content: `✅ **${claimerLabel}** hat das Ticket übernommen.`,
+        allowed_mentions: { parse: [] },
+      }),
+    }).catch(() => {});
   }
 
-  if (ticket.queueMessageId && ticket.discordGuildId) {
-    const deployment = await prisma.botDeployment.findUnique({ where: { guildId: ticket.discordGuildId } });
-    if (deployment?.ticketQueueChannelId) {
-      await fetch(`${DISCORD_API}/channels/${deployment.ticketQueueChannelId}/messages/${ticket.queueMessageId}`, {
+  if (ticket.queueMessageId) {
+    const deployment = ticket.discordGuildId
+      ? await prisma.botDeployment.findUnique({ where: { guildId: ticket.discordGuildId } })
+      : null;
+    const queueChannelId = TICKET_CLAIM_CHANNEL_ID || deployment?.ticketQueueChannelId;
+    if (queueChannelId) {
+      // Button entfernen -> kein Doppel-Claim moeglich.
+      await fetch(`${DISCORD_API}/channels/${queueChannelId}/messages/${ticket.queueMessageId}`, {
         method: "PATCH",
         headers: authHeaders(),
         body: JSON.stringify({
-          content: `✅ Übernommen von ${actor?.displayName ?? "jemandem"} — **${ticket.subject}**`,
+          content: "",
+          embeds: [
+            {
+              title: `${ticketLabel(ticket.category)} — übernommen`,
+              description:
+                `**${ticket.subject}**\nVon <@${ticket.applicantDiscordId}>` +
+                (ticket.discordChannelId ? `\n<#${ticket.discordChannelId}>` : ""),
+              color: 0x5b8cff,
+              footer: { text: `✅ Übernommen von ${claimerLabel}` },
+            },
+          ],
+          allowed_mentions: { parse: [] },
           components: [],
         }),
       }).catch(() => {});
@@ -285,6 +352,101 @@ export async function claimTicketCore(ticketId: string, actorId: string): Promis
   }
 
   await logAction({ actorId, action: "TICKET_CLAIMED", details: `Ticket "${ticket.subject}" übernommen.` });
+  return { ok: true };
+}
+
+/**
+ * Der Bearbeiter (oder ein Owner) bittet um Schliessung: der Ersteller
+ * bekommt im Thread zwei Buttons zum Bestaetigen oder Ablehnen. Erst seine
+ * Bestaetigung schliesst das Ticket wirklich (siehe confirmTicketCloseCore) -
+ * Owner koennen mit closeTicketCore weiterhin direkt schliessen.
+ */
+export async function requestTicketCloseCore(
+  ticketId: string,
+  actorId: string
+): Promise<TicketActionResult> {
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) return { ok: false, error: "Ticket nicht gefunden." };
+  if (ticket.status === TICKET_STATUS.CLOSED) return { ok: false, error: "Ticket ist bereits geschlossen." };
+
+  await prisma.ticket.update({
+    where: { id: ticketId },
+    data: { closeRequestedById: actorId, closeRequestedAt: new Date() },
+  });
+
+  if (ticket.discordChannelId) {
+    await fetch(`${DISCORD_API}/channels/${ticket.discordChannelId}/messages`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        content: `<@${ticket.applicantDiscordId}>`,
+        embeds: [
+          {
+            title: "🔒 Schließanfrage",
+            description:
+              "Das Team möchte dieses Ticket schließen. Ist dein Anliegen erledigt?\n\n" +
+              "Bestätige unten oder lehne ab, falls noch etwas offen ist.",
+            color: 0xf2b544,
+          },
+        ],
+        allowed_mentions: { users: [ticket.applicantDiscordId] },
+        components: [
+          {
+            type: 1,
+            components: [
+              {
+                type: 2,
+                style: 3,
+                label: "✅ Ja, schließen",
+                custom_id: `${TICKET_CLOSE_CONFIRM_PREFIX}${ticketId}`,
+              },
+              {
+                type: 2,
+                style: 2,
+                label: "↩️ Noch offen",
+                custom_id: `${TICKET_CLOSE_DECLINE_PREFIX}${ticketId}`,
+              },
+            ],
+          },
+        ],
+      }),
+    }).catch(() => {});
+  }
+
+  await logAction({
+    actorId,
+    action: "TICKET_CLOSE_REQUESTED",
+    details: `Schließanfrage für Ticket "${ticket.subject}" gestellt.`,
+  });
+  return { ok: true };
+}
+
+/** Der Ersteller lehnt die Schliessung ab - das Ticket bleibt offen. */
+export async function declineTicketCloseCore(ticketId: string): Promise<TicketActionResult> {
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) return { ok: false, error: "Ticket nicht gefunden." };
+  if (ticket.status === TICKET_STATUS.CLOSED) return { ok: false, error: "Ticket ist bereits geschlossen." };
+
+  await prisma.ticket.update({
+    where: { id: ticketId },
+    data: { closeRequestedById: null, closeRequestedAt: null },
+  });
+
+  if (ticket.discordChannelId) {
+    await fetch(`${DISCORD_API}/channels/${ticket.discordChannelId}/messages`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        content: "↩️ Der Ersteller hat die Schließung abgelehnt — das Ticket bleibt offen.",
+        allowed_mentions: { parse: [] },
+      }),
+    }).catch(() => {});
+  }
+
+  await logAction({
+    action: "TICKET_CLOSE_DECLINED",
+    details: `Schließung von Ticket "${ticket.subject}" vom Ersteller abgelehnt.`,
+  });
   return { ok: true };
 }
 
@@ -310,17 +472,49 @@ export async function closeTicketCore(ticketId: string, actorId: string): Promis
   });
 
   if (ticket.discordChannelId) {
+    // Abschluss-Hinweis noch VOR dem Archivieren posten, danach nimmt Discord
+    // keine Nachrichten mehr an.
+    await fetch(`${DISCORD_API}/channels/${ticket.discordChannelId}/messages`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: "🔒 Ticket geschlossen",
+            description: "Danke dir! Bei neuen Fragen einfach ein neues Ticket öffnen.",
+            color: 0x6b7280,
+          },
+        ],
+        allowed_mentions: { parse: [] },
+      }),
+    }).catch(() => {});
+
     await revokeChannelSendPermission(ticket.discordChannelId, ticket.applicantDiscordId).catch(() => {});
     await archiveThread(ticket.discordChannelId).catch(() => {});
   }
 
-  if (ticket.status !== TICKET_STATUS.CLAIMED && ticket.queueMessageId && ticket.discordGuildId) {
-    const deployment = await prisma.botDeployment.findUnique({ where: { guildId: ticket.discordGuildId } });
-    if (deployment?.ticketQueueChannelId) {
-      await fetch(`${DISCORD_API}/channels/${deployment.ticketQueueChannelId}/messages/${ticket.queueMessageId}`, {
+  if (ticket.queueMessageId) {
+    const deployment = ticket.discordGuildId
+      ? await prisma.botDeployment.findUnique({ where: { guildId: ticket.discordGuildId } })
+      : null;
+    const queueChannelId = TICKET_CLAIM_CHANNEL_ID || deployment?.ticketQueueChannelId;
+    if (queueChannelId) {
+      await fetch(`${DISCORD_API}/channels/${queueChannelId}/messages/${ticket.queueMessageId}`, {
         method: "PATCH",
         headers: authHeaders(),
-        body: JSON.stringify({ content: `🔒 Geschlossen — **${ticket.subject}**`, components: [] }),
+        body: JSON.stringify({
+          content: "",
+          embeds: [
+            {
+              title: `${ticketLabel(ticket.category)} — geschlossen`,
+              description: `**${ticket.subject}**\nVon <@${ticket.applicantDiscordId}>`,
+              color: 0x6b7280,
+              footer: { text: "🔒 Erledigt" },
+            },
+          ],
+          allowed_mentions: { parse: [] },
+          components: [],
+        }),
       }).catch(() => {});
     }
   }

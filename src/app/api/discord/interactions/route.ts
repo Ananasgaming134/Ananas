@@ -11,13 +11,20 @@ import {
 } from "@/lib/discordPanel";
 import { RENEW_PREFIX, setSubscriptionPlanCore } from "@/lib/subscriptions";
 import { applyAndOpenTicketCore } from "@/lib/applications";
-import { addThreadMember, grantChannelMemberAccess } from "@/lib/discord";
+import {
+  TICKET_PANEL_CHANNEL_ID,
+  addThreadMember,
+  grantChannelMemberAccess,
+  isTicketOwner,
+} from "@/lib/discord";
 import {
   TICKET_CATEGORY,
   canManageTicket,
   claimTicketCore,
   closeTicketCore,
   createTicketCore,
+  declineTicketCloseCore,
+  requestTicketCloseCore,
   type TicketCategoryValue,
 } from "@/lib/tickets";
 import {
@@ -36,9 +43,14 @@ import {
   SUPPORT_MODAL_ID,
   TICKET_CLAIM_PREFIX,
   TICKET_CLOSE_PREFIX,
+  TICKET_CLOSE_CONFIRM_PREFIX,
+  TICKET_CLOSE_DECLINE_PREFIX,
+  TICKET_CLOSE_REQUEST_PREFIX,
   TICKET_OPEN_BEWERBUNG_ID,
   TICKET_OPEN_SUPPORT_ID,
+  TICKET_OPEN_VERLEIH_ID,
   TICKET_PLAN_SELECT_ID,
+  VERLEIH_MODAL_ID,
   buildAkteEmbedForDiscord,
   ensureMemberFromDiscordUser,
   getModalValue,
@@ -112,6 +124,10 @@ async function handleCommand(interaction: DiscordInteractionPayload) {
 
   if (commandName === "setup") {
     return handleSetupCommand(interaction, invokerRoles);
+  }
+
+  if (commandName === "setup-tickets") {
+    return handleSetupTicketsCommand(interaction, invokerRoles);
   }
 
   if (commandName === "wortketten-reset") {
@@ -288,6 +304,49 @@ async function handleSetupItemPanel(
   );
 }
 
+/**
+ * "/setup-tickets": postet das Ticket-Panel in den fest konfigurierten
+ * Ticket-Kanal (TICKET_PANEL_CHANNEL_ID) - unabhaengig davon, wo der Befehl
+ * ausgefuehrt wird. Dort entstehen anschliessend auch die Ticket-Threads.
+ */
+async function handleSetupTicketsCommand(
+  interaction: DiscordInteractionPayload,
+  invokerRoles: string[]
+) {
+  if (!isTicketOwner(invokerRoles) && !hasOwnerRole(invokerRoles)) {
+    return ephemeral("❌ Du hast nicht die erforderliche Rolle");
+  }
+  if (!interaction.guild_id) return ephemeral("Nur innerhalb eines Servers nutzbar.");
+
+  const deployment = await prisma.botDeployment.findUnique({ where: { guildId: interaction.guild_id } });
+  if (!deployment) {
+    return ephemeral("Bitte zuerst „/setup item-panel“ ausführen, um diesen Server einzurichten.");
+  }
+
+  await prisma.botDeployment.update({
+    where: { id: deployment.id },
+    data: { ticketPanelChannelId: TICKET_PANEL_CHANNEL_ID },
+  });
+
+  const result = await postOrUpdateTicketPanel(deployment.id);
+  const actor = await prisma.member.findUnique({
+    where: { discordId: (interaction.member?.user ?? interaction.user)?.id ?? "" },
+  });
+  await logAction({
+    actorId: actor?.id ?? null,
+    action: result.ok ? "BOT_TICKET_PANEL_POSTED" : "BOT_TICKET_PANEL_FAILED",
+    details: result.ok
+      ? `Ticket-Panel in Kanal ${TICKET_PANEL_CHANNEL_ID} gepostet.`
+      : `Ticket-Panel fehlgeschlagen: ${result.error}`,
+  });
+
+  return ephemeral(
+    result.ok
+      ? `✅ Ticket-Panel steht in <#${TICKET_PANEL_CHANNEL_ID}>.`
+      : `❌ ${result.error}`
+  );
+}
+
 async function handleSetupStatusPanel(guildId: string, channelId: string, actorId: string | null) {
   const existing = await prisma.botDeployment.findUnique({ where: { guildId } });
   if (!existing) {
@@ -454,6 +513,25 @@ async function handleComponent(interaction: DiscordInteractionPayload) {
     return respondWithPlanSelect();
   }
 
+  if (customId === TICKET_OPEN_VERLEIH_ID) {
+    return respondWithVerleihModal();
+  }
+
+  if (customId.startsWith(TICKET_CLOSE_REQUEST_PREFIX)) {
+    const ticketId = customId.slice(TICKET_CLOSE_REQUEST_PREFIX.length);
+    return handleTicketCloseRequest(ticketId, memberRoles, discordUser);
+  }
+
+  if (customId.startsWith(TICKET_CLOSE_CONFIRM_PREFIX)) {
+    const ticketId = customId.slice(TICKET_CLOSE_CONFIRM_PREFIX.length);
+    return handleTicketCloseConfirm(ticketId, discordUser, true);
+  }
+
+  if (customId.startsWith(TICKET_CLOSE_DECLINE_PREFIX)) {
+    const ticketId = customId.slice(TICKET_CLOSE_DECLINE_PREFIX.length);
+    return handleTicketCloseConfirm(ticketId, discordUser, false);
+  }
+
   if (customId === TICKET_PLAN_SELECT_ID) {
     const planId = interaction.data?.values?.[0];
     if (!planId) return ephemeral("Kein Paket ausgewählt.");
@@ -496,6 +574,32 @@ function respondWithPlanSelect() {
             },
           ],
         },
+      ],
+    },
+  });
+}
+
+/**
+ * Verleih-Service-Ticket: genau die fuenf Aufnahmefragen. Discord erlaubt
+ * maximal fuenf Felder pro Modal - mehr passt hier also bewusst nicht rein.
+ */
+function respondWithVerleihModal() {
+  const field = (customId: string, label: string, maxLength: number, style = 1) => ({
+    type: 1,
+    components: [{ type: 4, custom_id: customId, style, label, max_length: maxLength, required: true }],
+  });
+
+  return Response.json({
+    type: InteractionResponseType.MODAL,
+    data: {
+      custom_id: VERLEIH_MODAL_ID,
+      title: "Verleih-Service",
+      components: [
+        field("age", "Wie alt bist du?", 3),
+        field("minecraftName", "Dein Minecraft Name?", 32),
+        field("netWorth", "Dein Gesamtvermögen?", 20),
+        field("playHours", "Deine Gesamtspielzeit?", 20),
+        field("banHistory", "Vorgeschichten in der Bannhistorie?", 500, 2),
       ],
     },
   });
@@ -584,6 +688,10 @@ async function handleModalSubmit(interaction: DiscordInteractionPayload) {
   const discordUser = interaction.member?.user ?? interaction.user;
   if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
 
+  if (customId === VERLEIH_MODAL_ID) {
+    return handleVerleihSubmit(interaction, discordUser);
+  }
+
   if (customId === ITEM_SEARCH_MODAL_ID) {
     const query = getModalValue(interaction, "query");
     const payload = await buildItemSearchResultPayload(query, 0);
@@ -660,6 +768,53 @@ async function handleModalSubmit(interaction: DiscordInteractionPayload) {
   return ephemeral("Unbekanntes Formular.");
 }
 
+/**
+ * Nimmt ein abgesendetes Verleih-Formular entgegen: legt die Bewerbung an
+ * (damit sie in der Bewerbungs-Uebersicht landet und dort angenommen werden
+ * kann) und oeffnet das zugehoerige Ticket samt privatem Thread. Da das
+ * Formular kein Paket abfragt, wird das kleinste Paket vorgemerkt - der Owner
+ * legt beim Annehmen ohnehin fest, was tatsaechlich gebucht wird.
+ */
+async function handleVerleihSubmit(
+  interaction: DiscordInteractionPayload,
+  discordUser: DiscordInteractionUser
+) {
+  const minecraftName = getModalValue(interaction, "minecraftName").trim();
+  const banHistory = getModalValue(interaction, "banHistory").trim();
+  const age = parseInt(getModalValue(interaction, "age").replace(/[^\d]/g, ""), 10);
+  const declaredNetWorth = parseInt(getModalValue(interaction, "netWorth").replace(/[^\d]/g, ""), 10);
+  const playHours = parseInt(getModalValue(interaction, "playHours").replace(/[^\d]/g, ""), 10);
+
+  if (!minecraftName || !Number.isFinite(age)) {
+    return ephemeral("❌ Bitte Alter und Minecraft-Namen gültig ausfüllen.");
+  }
+
+  const displayName = discordUser.global_name ?? discordUser.username;
+  const result = await applyAndOpenTicketCore({
+    discordId: discordUser.id,
+    username: discordUser.username,
+    displayName,
+    avatarUrl: discordUser.avatar
+      ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
+      : null,
+    reason: banHistory || "—",
+    banHistory: banHistory || null,
+    declaredNetWorth: Number.isFinite(declaredNetWorth) ? declaredNetWorth : 0,
+    requestedPlanId: SUBSCRIPTION_PLANS[0].id,
+    source: "DISCORD",
+    minecraftName,
+    age,
+    playHours: Number.isFinite(playHours) ? playHours : 0,
+    ticketCategory: TICKET_CATEGORY.VERLEIH,
+  });
+
+  return ephemeral(
+    result.ok
+      ? "✅ Deine Anfrage ist raus! Du wurdest zu einem privaten Ticket hinzugefügt — dort meldet sich gleich jemand."
+      : `❌ ${result.error}`
+  );
+}
+
 async function handleTicketClaim(
   ticketId: string,
   memberRoles: string[],
@@ -671,8 +826,8 @@ async function handleTicketClaim(
     : null;
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) return ephemeral("Ticket nicht gefunden.");
-  if (!deployment || !canManageTicket(ticket.category as TicketCategoryValue, deployment, memberRoles)) {
-    return ephemeral("Du bist nicht berechtigt, dieses Ticket zu übernehmen.");
+  if (!canManageTicket(ticket.category as TicketCategoryValue, deployment, memberRoles)) {
+    return ephemeral("❌ Du hast nicht die erforderliche Rolle");
   }
 
   const actor = await ensureMemberFromDiscordUser(discordUser);
@@ -681,6 +836,59 @@ async function handleTicketClaim(
 
   const actorLabel = discordUser.global_name ?? discordUser.username;
   return ephemeral(`🙋 Ticket übernommen von ${actorLabel}.`);
+}
+
+/**
+ * Schliessanfrage: nur der Bearbeiter oder ein Owner darf sie stellen. Owner
+ * schliessen damit direkt, alle anderen erst nach Bestaetigung des Erstellers.
+ */
+async function handleTicketCloseRequest(
+  ticketId: string,
+  memberRoles: string[],
+  discordUser: DiscordInteractionUser
+) {
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) return ephemeral("Ticket nicht gefunden.");
+
+  const actor = await ensureMemberFromDiscordUser(discordUser);
+  const owner = isTicketOwner(memberRoles);
+  const isClaimer = ticket.claimedById === actor.id;
+
+  if (!owner && !isClaimer) {
+    return ephemeral("❌ Du hast nicht die erforderliche Rolle");
+  }
+
+  if (owner) {
+    const result = await closeTicketCore(ticketId, actor.id);
+    return ephemeral(result.ok ? "🔒 Ticket direkt geschlossen." : `❌ ${result.error}`);
+  }
+
+  const result = await requestTicketCloseCore(ticketId, actor.id);
+  return ephemeral(
+    result.ok ? "📨 Schließanfrage gesendet — der Ersteller muss noch bestätigen." : `❌ ${result.error}`
+  );
+}
+
+/** Antwort des Erstellers auf die Schliessanfrage (bestaetigen oder ablehnen). */
+async function handleTicketCloseConfirm(
+  ticketId: string,
+  discordUser: DiscordInteractionUser,
+  confirmed: boolean
+) {
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) return ephemeral("Ticket nicht gefunden.");
+  if (ticket.applicantDiscordId !== discordUser.id) {
+    return ephemeral("Nur die Person, die das Ticket eröffnet hat, kann das entscheiden.");
+  }
+
+  if (!confirmed) {
+    const result = await declineTicketCloseCore(ticketId);
+    return ephemeral(result.ok ? "↩️ Alles klar, das Ticket bleibt offen." : `❌ ${result.error}`);
+  }
+
+  const actor = await ensureMemberFromDiscordUser(discordUser);
+  const result = await closeTicketCore(ticketId, actor.id);
+  return ephemeral(result.ok ? "🔒 Ticket geschlossen. Danke dir!" : `❌ ${result.error}`);
 }
 
 async function handleTicketClose(

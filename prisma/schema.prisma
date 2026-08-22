@@ -370,6 +370,8 @@ model MembershipApplication {
   minecraftName    String
   age              Int
   playHours        Int
+  // Antwort auf "Vorgeschichten in der Bannhistorie?" aus dem Verleih-Ticket.
+  banHistory       String?
 
   status           String   @default("PENDING") // PENDING | APPROVED | REJECTED
   rejectionReason  String?
@@ -417,7 +419,7 @@ model ApplicationBlock {
 // Website zeigt nur Status + Link zum Kanal, kein Nachrichten-Sync.
 model Ticket {
   id                 String    @id @default(cuid())
-  category           String    // SUPPORT | BEWERBUNG
+  category           String    // SUPPORT | BEWERBUNG | VERLEIH
   subject            String
   status             String    @default("OPEN") // OPEN | CLAIMED | CLOSED
 
@@ -437,6 +439,12 @@ model Ticket {
   // Nachricht in der Claim-Warteschlange (BotDeployment.ticketQueueChannelId)
   // - wird beim Claim/Close editiert (Button entfernt, "von X uebernommen").
   queueMessageId     String?
+
+  // Schliessanfrage: der Bearbeiter bittet um Schliessung, der Ersteller
+  // bestaetigt oder lehnt ab (siehe requestTicketCloseCore). Owner koennen
+  // ohne diesen Umweg direkt schliessen.
+  closeRequestedById String?
+  closeRequestedAt   DateTime?
 
   // Beim Schliessen aus dem Discord-Thread gesicherter Gespraechsverlauf -
   // dient als Nachweis, falls spaeter strittig ist, was zugesagt wurde.

@@ -41,6 +41,17 @@ export const TICKET_PLAN_SELECT_ID = "leihcenter_ticket_plan_select";
 export const TICKET_CLAIM_PREFIX = "leihcenter_ticket_claim:";
 export const TICKET_CLOSE_PREFIX = "leihcenter_ticket_close:";
 export const SUPPORT_MODAL_ID = "leihcenter_support_modal";
+
+// Verleih-Service-Ticket: eigener Button im Panel, eigenes Modal mit den fuenf
+// Aufnahmefragen (Discord erlaubt genau 5 Felder pro Modal).
+export const TICKET_OPEN_VERLEIH_ID = "leihcenter_ticket_open_verleih";
+export const VERLEIH_MODAL_ID = "leihcenter_verleih_modal";
+
+// Schliessen in zwei Schritten: der Bearbeiter stellt die Anfrage, der
+// Ersteller bestaetigt oder lehnt ab. custom_id-Format: `${PREFIX}${ticketId}`.
+export const TICKET_CLOSE_REQUEST_PREFIX = "leihcenter_ticket_close_req:";
+export const TICKET_CLOSE_CONFIRM_PREFIX = "leihcenter_ticket_close_yes:";
+export const TICKET_CLOSE_DECLINE_PREFIX = "leihcenter_ticket_close_no:";
 /** custom_id-Format: `${BEWERBUNG_MODAL_PREFIX}${planId}` - das Paket wurde im vorherigen Schritt per Select gewaehlt. */
 export const BEWERBUNG_MODAL_PREFIX = "leihcenter_bewerbung_modal:";
 

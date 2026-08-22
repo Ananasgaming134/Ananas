@@ -74,6 +74,13 @@ export default async function BewerbungenPage() {
                   </p>
                 </div>
 
+                {app.banHistory && (
+                  <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3">
+                    <p className="mb-1 text-xs font-medium text-yellow-500">Bannhistorie (Eigenangabe)</p>
+                    <p className="text-sm">{app.banHistory}</p>
+                  </div>
+                )}
+
                 {app.items.length > 0 && (
                   <div className="rounded-lg border border-border bg-surface/60 p-3">
                     <p className="mb-1.5 text-xs font-medium text-muted">Angegebene Items</p>
