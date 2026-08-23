@@ -172,13 +172,15 @@ async function provisionTicketChannel(
       (initialMessage ? `${initialMessage}\n\n` : "") +
       `<@${ticket.applicantDiscordId}>, danke für dein Ticket! Ein Teammitglied übernimmt es gleich.`,
     color: ticket.category === TICKET_CATEGORY.VERLEIH ? 0xf2b544 : 0x3ddc97,
-    footer: { text: `Ticket ${ticket.id.slice(-6)}` },
+    footer: { text: `Ticket ${ticket.id.slice(-6)} · Schließen über /ticket schliessen` },
   };
 
   // Owner werden bei JEDEM neuen Ticket direkt mit angepingt.
   const ownerRoles = ticketOwnerRoleIds();
   const ownerPing = ownerRoles.map((r) => `<@&${r}>`).join(" ");
 
+  // Bewusst OHNE Schliess-Button: das Schliessen laeuft ausschliesslich ueber
+  // den Befehl /ticket schliessen, damit die Nachricht sauber bleibt.
   await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {
     method: "POST",
     headers: authHeaders(),
@@ -186,19 +188,6 @@ async function provisionTicketChannel(
       content: `<@${ticket.applicantDiscordId}> ${ownerPing}`.trim(),
       embeds: [embed],
       allowed_mentions: { users: [ticket.applicantDiscordId], roles: ownerRoles },
-      components: [
-        {
-          type: 1,
-          components: [
-            {
-              type: 2,
-              style: 2,
-              label: "🔒 Schließanfrage senden",
-              custom_id: `${TICKET_CLOSE_REQUEST_PREFIX}${ticket.id}`,
-            },
-          ],
-        },
-      ],
     }),
   }).catch(() => {});
 
@@ -334,20 +323,29 @@ export async function claimTicketCore(ticketId: string, actorId: string): Promis
       : null;
     const queueChannelId = TICKET_CLAIM_CHANNEL_ID || deployment?.ticketQueueChannelId;
     if (queueChannelId) {
-      // Button entfernen -> kein Doppel-Claim moeglich.
+      // Button entfernen -> kein Doppel-Claim moeglich. Die Nachricht bleibt
+      // im Claim-Kanal stehen und zeigt auf einen Blick, wer uebernommen hat.
+      const claimedUnix = Math.floor(Date.now() / 1000);
       await fetch(`${DISCORD_API}/channels/${queueChannelId}/messages/${ticket.queueMessageId}`, {
         method: "PATCH",
         headers: authHeaders(),
         body: JSON.stringify({
-          content: "",
+          content: `✅ **Übernommen von ${claimerLabel}**`,
           embeds: [
             {
-              title: `${ticketLabel(ticket.category)} — übernommen`,
-              description:
-                `**${ticket.subject}**\nVon <@${ticket.applicantDiscordId}>` +
-                (ticket.discordChannelId ? `\n<#${ticket.discordChannelId}>` : ""),
+              title: `${ticketLabel(ticket.category)} — ${ticket.subject}`,
+              description: ticket.discordChannelId ? `<#${ticket.discordChannelId}>` : "",
               color: 0x5b8cff,
-              footer: { text: `✅ Übernommen von ${claimerLabel}` },
+              fields: [
+                {
+                  name: "Bearbeiter",
+                  value: actor ? `<@${actor.discordId}>` : claimerLabel,
+                  inline: true,
+                },
+                { name: "Ersteller", value: `<@${ticket.applicantDiscordId}>`, inline: true },
+                { name: "Übernommen", value: `<t:${claimedUnix}:R>`, inline: true },
+              ],
+              footer: { text: "In Bearbeitung" },
             },
           ],
           allowed_mentions: { parse: [] },
@@ -381,6 +379,9 @@ export async function requestTicketCloseCore(
   });
 
   if (ticket.discordChannelId) {
+    const deadlineUnix = Math.floor((Date.now() + CLOSE_REQUEST_TIMEOUT_MS) / 1000);
+    const requester = await prisma.member.findUnique({ where: { id: actorId } });
+
     await fetch(`${DISCORD_API}/channels/${ticket.discordChannelId}/messages`, {
       method: "POST",
       headers: authHeaders(),
@@ -389,10 +390,23 @@ export async function requestTicketCloseCore(
         embeds: [
           {
             title: "🔒 Schließanfrage",
-            description:
-              "Das Team möchte dieses Ticket schließen. Ist dein Anliegen erledigt?\n\n" +
-              "Bestätige unten oder lehne ab, falls noch etwas offen ist.",
+            description: [
+              `**${requester?.displayName ?? "Das Team"}** möchte dieses Ticket schließen.`,
+              "",
+              "**Ist dein Anliegen erledigt?**",
+              "> ✅ **Ja, schließen** — Ticket wird geschlossen und archiviert",
+              "> ↩️ **Noch offen** — Ticket bleibt offen, die Anfrage wird verworfen",
+              "",
+              "**Wer darf entscheiden?**",
+              `> In erster Linie du als Ersteller (<@${ticket.applicantDiscordId}>).`,
+              "> Owner und Devs können ebenfalls bestätigen oder ablehnen.",
+              "",
+              "**Wenn du nicht reagierst**",
+              `> schließt das Ticket automatisch <t:${deadlineUnix}:R> (${"<t:" + deadlineUnix + ":f>"}).`,
+              "> Lehnst du ab, entfällt diese Frist.",
+            ].join("\n"),
             color: 0xf2b544,
+            footer: { text: "Antwortfrist: 24 Stunden" },
           },
         ],
         allowed_mentions: { users: [ticket.applicantDiscordId] },

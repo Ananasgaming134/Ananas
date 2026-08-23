@@ -566,12 +566,12 @@ async function handleComponent(interaction: DiscordInteractionPayload) {
 
   if (customId.startsWith(TICKET_CLOSE_CONFIRM_PREFIX)) {
     const ticketId = customId.slice(TICKET_CLOSE_CONFIRM_PREFIX.length);
-    return handleTicketCloseConfirm(ticketId, discordUser, true, interaction);
+    return handleTicketCloseConfirm(ticketId, discordUser, true, interaction, memberRoles);
   }
 
   if (customId.startsWith(TICKET_CLOSE_DECLINE_PREFIX)) {
     const ticketId = customId.slice(TICKET_CLOSE_DECLINE_PREFIX.length);
-    return handleTicketCloseConfirm(ticketId, discordUser, false, interaction);
+    return handleTicketCloseConfirm(ticketId, discordUser, false, interaction, memberRoles);
   }
 
   if (customId === TICKET_PLAN_SELECT_ID) {
@@ -926,12 +926,17 @@ async function handleTicketCloseConfirm(
   ticketId: string,
   discordUser: DiscordInteractionUser,
   confirmed: boolean,
-  interaction: DiscordInteractionPayload
+  interaction: DiscordInteractionPayload,
+  memberRoles: string[]
 ) {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) return ephemeral("Ticket nicht gefunden.");
-  if (ticket.applicantDiscordId !== discordUser.id) {
-    return ephemeral("Nur die Person, die das Ticket eröffnet hat, kann das entscheiden.");
+
+  // In erster Linie entscheidet der Ersteller - Owner und Devs duerfen aber
+  // ebenfalls bestaetigen oder ablehnen.
+  const isCreator = ticket.applicantDiscordId === discordUser.id;
+  if (!isCreator && !isTicketOwner(memberRoles)) {
+    return ephemeral("Das entscheidet der Ersteller des Tickets (oder ein Owner).");
   }
 
   return deferAndRun(interaction, async () => {
@@ -1049,18 +1054,13 @@ async function handleTicketAddCommand(interaction: DiscordInteractionPayload, in
     }
     if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
 
-    const owner = isTicketOwner(invokerRoles);
+    // Der Befehl schliesst nie direkt, sondern stellt immer die Anfrage an den
+    // Ersteller - bestaetigen koennen dann er selbst oder Owner/Devs.
     return deferAndRun(interaction, async () => {
       const me = await ensureMemberFromDiscordUser(discordUser);
-
-      if (owner) {
-        const result = await closeTicketCore(ticket.id, me.id);
-        return result.ok ? "🔒 Ticket geschlossen." : `❌ ${result.error}`;
-      }
-
       const result = await requestTicketCloseCore(ticket.id, me.id);
       return result.ok
-        ? "📨 Schließanfrage gesendet — ohne Antwort schließt das Ticket in 24 Stunden automatisch."
+        ? "📨 Schließanfrage gestellt — der Ersteller (oder ein Owner) bestätigt. Ohne Antwort schließt das Ticket in 24 Stunden automatisch."
         : `❌ ${result.error}`;
     });
   }
