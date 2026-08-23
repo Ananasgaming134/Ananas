@@ -49,7 +49,7 @@ export default async function AboPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 pt-3 sm:grid-cols-3">
         {SUBSCRIPTION_PLANS.map((plan, i) => {
           const monthlyRate = plan.price / plan.months;
           const baseMonthlyRate = SUBSCRIPTION_PLANS[0].price / SUBSCRIPTION_PLANS[0].months;
@@ -58,20 +58,23 @@ export default async function AboPage() {
           const isCurrent = member.subscriptionPlan === plan.id;
 
           return (
-            <div
-              key={plan.id}
-              className={`fade-up fade-up-${i + 1} card-hover relative overflow-hidden rounded-2xl border p-6 ${
-                isBestValue
-                  ? "border-accent/60 bg-gradient-to-b from-accent/10 via-surface to-surface shadow-[0_0_40px_-12px_var(--accent)]"
-                  : "border-border bg-surface"
-              }`}
-            >
-              {isBestValue && <div className="gradient-top-bar" />}
+            // Aeusserer Rahmen OHNE overflow-hidden: das "Beliebt"-Band ragt
+            // bewusst ueber den Kartenrand hinaus und wurde vorher von der
+            // Karte selbst abgeschnitten.
+            <div key={plan.id} className={`fade-up fade-up-${i + 1} relative`}>
               {isBestValue && (
-                <span className="absolute -top-2.5 right-5 rounded-full bg-accent px-2.5 py-0.5 text-[10px] font-semibold text-black shadow-md">
+                <span className="absolute -top-2.5 right-5 z-10 rounded-full bg-accent px-2.5 py-0.5 text-[10px] font-semibold text-black shadow-md">
                   ⭐ Beliebt
                 </span>
               )}
+              <div
+                className={`card-hover relative h-full overflow-hidden rounded-2xl border p-6 ${
+                  isBestValue
+                    ? "border-accent/60 bg-gradient-to-b from-accent/10 via-surface to-surface shadow-[0_0_40px_-12px_var(--accent)]"
+                    : "border-border bg-surface"
+                }`}
+              >
+              {isBestValue && <div className="gradient-top-bar" />}
               {isCurrent && (
                 <span className="mb-2 inline-block rounded-full border border-accent-2/40 bg-accent-2/10 px-2.5 py-0.5 text-[10px] font-medium text-accent-2">
                   ✓ Dein aktuelles Paket
@@ -95,6 +98,7 @@ export default async function AboPage() {
                   </li>
                 ))}
               </ul>
+              </div>
             </div>
           );
         })}
@@ -132,33 +136,42 @@ export default async function AboPage() {
         </p>
       </div>
 
-      {member.subscriptionPlan && (
-        <div className="fade-up card space-y-3 p-5">
-          <h2 className="text-sm font-semibold">Paket wechseln</h2>
-          {pendingChange ? (
-            <p className="text-sm text-muted">
-              Anfrage auf{" "}
+      {/* Auch ohne laufendes Abo beantragbar - sonst haetten neue Kunden gar
+          keine Moeglichkeit, ihr erstes Paket anzufragen. */}
+      <div className="fade-up card space-y-3 p-5">
+        <h2 className="text-sm font-semibold">
+          {member.subscriptionPlan ? "Paket wechseln" : "Abo beantragen"}
+        </h2>
+        {pendingChange ? (
+          <div className="rounded-lg border border-accent/30 bg-accent/5 p-4">
+            <p className="text-sm font-medium text-accent">⏳ Antrag läuft</p>
+            <p className="mt-1.5 text-sm text-muted">
+              Dein Antrag auf{" "}
               <span className="text-foreground">
-                {SUBSCRIPTION_PLANS.find((p) => p.id === pendingChange.requestedPlanId)?.label ?? pendingChange.requestedPlanId}
+                {SUBSCRIPTION_PLANS.find((p) => p.id === pendingChange.requestedPlanId)?.label ??
+                  pendingChange.requestedPlanId}
               </span>{" "}
-              ist eingereicht und wartet auf Genehmigung durch den Owner.
+              ist eingereicht. In Discord wurde dazu ein Ticket geöffnet, in dem der Owner
+              bestätigt oder ablehnt — schau dort rein, falls es Rückfragen gibt.
             </p>
-          ) : (
-            <>
-              <p className="text-sm text-muted">
-                Möchtest du ein anderes Paket? Der Wechsel muss vom Owner genehmigt werden und gilt
-                dann ab deiner nächsten Verlängerung — deine aktuelle Laufzeit bleibt unangetastet.
-                Du brauchst dafür bereits genug Guthaben für das neue Paket.
-              </p>
-              <PlanChangeRequestForm
-                plans={SUBSCRIPTION_PLANS}
-                currentPlanId={member.subscriptionPlan}
-                balance={member.balance}
-              />
-            </>
-          )}
-        </div>
-      )}
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-muted">
+              {member.subscriptionPlan
+                ? "Möchtest du ein anderes Paket? Der Wechsel gilt ab deiner nächsten Verlängerung — deine aktuelle Laufzeit bleibt unangetastet."
+                : "Wähle das Paket, das du haben möchtest."}{" "}
+              Du brauchst dafür bereits genug Guthaben. Nach dem Absenden öffnet sich in Discord
+              automatisch ein Ticket, in dem der Owner entscheidet.
+            </p>
+            <PlanChangeRequestForm
+              plans={SUBSCRIPTION_PLANS}
+              currentPlanId={member.subscriptionPlan}
+              balance={member.balance}
+            />
+          </>
+        )}
+      </div>
 
       <div className="fade-up card space-y-2 p-5 text-sm">
         <h2 className="text-sm font-semibold">Abo pausieren</h2>

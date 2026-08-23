@@ -13,6 +13,12 @@ import {
 import { RENEW_PREFIX, setSubscriptionPlanCore } from "@/lib/subscriptions";
 import { applyAndOpenTicketCore } from "@/lib/applications";
 import {
+  approvePlanChangeCore,
+  findPendingRequestByDiscordId,
+  findPendingRequestByTicket,
+  rejectPlanChangeCore,
+} from "@/lib/planChanges";
+import {
   TICKET_PANEL_CHANNEL_ID,
   addThreadMember,
   canClaimTicket,
@@ -1009,6 +1015,53 @@ async function handleAboCommand(interaction: DiscordInteractionPayload, invokerR
   }
 
   const subcommand = interaction.data?.options?.[0];
+
+  // Abo-Antraege bestaetigen/ablehnen: bevorzugt im Abo-Ticket selbst (dann
+  // ist der Antrag eindeutig), sonst per angegebener Person.
+  if (subcommand?.name === "bestaetigen" || subcommand?.name === "ablehnen") {
+    if (!isTicketOwner(invokerRoles) && !hasOwnerRole(invokerRoles)) {
+      return ephemeral("❌ Über Abo-Anträge entscheidet nur der Owner.");
+    }
+
+    const discordUser = interaction.member?.user ?? interaction.user;
+    if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
+
+    const ticketHere = interaction.channel_id
+      ? await prisma.ticket.findFirst({ where: { discordChannelId: interaction.channel_id } })
+      : null;
+    const targetDiscordId = subcommand.options?.find((o) => o.name === "user")?.value;
+
+    const request = ticketHere
+      ? await findPendingRequestByTicket(ticketHere.id)
+      : targetDiscordId
+        ? await findPendingRequestByDiscordId(String(targetDiscordId))
+        : null;
+
+    if (!request) {
+      return ephemeral(
+        ticketHere
+          ? "Zu diesem Ticket gibt es keinen offenen Abo-Antrag."
+          : "Kein offener Abo-Antrag gefunden. Nutze den Befehl im Abo-Ticket oder gib die Person an."
+      );
+    }
+
+    const reason = subcommand.options?.find((o) => o.name === "grund")?.value;
+    const approve = subcommand.name === "bestaetigen";
+
+    return deferAndRun(interaction, async () => {
+      const actor = await ensureMemberFromDiscordUser(discordUser);
+      const result = approve
+        ? await approvePlanChangeCore(request.id, actor.id)
+        : await rejectPlanChangeCore(request.id, actor.id, reason ? String(reason) : null);
+
+      if (!result.ok) return `❌ ${result.error}`;
+      const plan = SUBSCRIPTION_PLANS.find((p) => p.id === request.requestedPlanId);
+      return approve
+        ? `✅ Abo von ${request.member.displayName} auf ${plan?.label ?? request.requestedPlanId} bestätigt.`
+        : `❌ Abo-Antrag von ${request.member.displayName} abgelehnt.`;
+    });
+  }
+
   if (subcommand?.name !== "setzen") return ephemeral("Unbekannter Abo-Befehl.");
 
   const targetDiscordId = subcommand.options?.find((o) => o.name === "user")?.value;

@@ -730,6 +730,23 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
               },
             ],
           },
+          {
+            type: 1, // SUB_COMMAND
+            name: "bestaetigen",
+            description: "Bestätigt den offenen Abo-Antrag (im Abo-Ticket oder mit Person)",
+            options: [
+              { type: 6, name: "user", description: "Wessen Antrag (nur außerhalb des Tickets nötig)", required: false },
+            ],
+          },
+          {
+            type: 1, // SUB_COMMAND
+            name: "ablehnen",
+            description: "Lehnt den offenen Abo-Antrag ab (im Abo-Ticket oder mit Person)",
+            options: [
+              { type: 6, name: "user", description: "Wessen Antrag (nur außerhalb des Tickets nötig)", required: false },
+              { type: 3, name: "grund", description: "Warum abgelehnt wird", required: false },
+            ],
+          },
         ],
       },
     ]),

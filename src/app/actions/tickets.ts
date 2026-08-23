@@ -10,14 +10,20 @@ function refreshTicketPages() {
   revalidatePath("/dashboard/verwaltung/tickets");
 }
 
-export async function openSupportTicket(formData: FormData) {
+/** Rueckgabetyp fuer useActionState - traegt Fehler bis in die Oberflaeche. */
+export type TicketFormState = { ok: boolean; error?: string } | null;
+
+export async function openSupportTicket(
+  _prevState: TicketFormState,
+  formData: FormData
+): Promise<TicketFormState> {
   const member = await requireMember();
 
   const subject = String(formData.get("subject") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  if (!subject) return;
+  if (!subject) return { ok: false, error: "Bitte einen Betreff angeben." };
 
-  await createTicketCore({
+  const result = await createTicketCore({
     category: TICKET_CATEGORY.SUPPORT,
     subject,
     applicantDiscordId: member.discordId,
@@ -26,6 +32,7 @@ export async function openSupportTicket(formData: FormData) {
   });
 
   refreshTicketPages();
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
 export async function claimTicket(ticketId: string) {

@@ -469,6 +469,9 @@ model PlanChangeRequest {
   status          String    @default("PENDING") // PENDING | APPROVED | REJECTED
   reviewedById    String?
   reviewedAt      DateTime?
+  // Zugehoeriges Discord-Ticket: dort wird der Antrag besprochen und per
+  // "/abo bestaetigen" bzw. "/abo ablehnen" entschieden.
+  ticketId        String?
   createdAt       DateTime  @default(now())
 
   @@index([memberId])

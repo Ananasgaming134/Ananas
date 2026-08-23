@@ -35,6 +35,7 @@ export const TICKET_CATEGORY = {
   SUPPORT: "SUPPORT",
   BEWERBUNG: "BEWERBUNG",
   VERLEIH: "VERLEIH",
+  ABO: "ABO",
 } as const;
 export type TicketCategoryValue = (typeof TICKET_CATEGORY)[keyof typeof TICKET_CATEGORY];
 
@@ -44,6 +45,7 @@ export const TICKET_STATUS = { OPEN: "OPEN", CLAIMED: "CLAIMED", CLOSED: "CLOSED
 export function ticketLabel(category: string): string {
   if (category === TICKET_CATEGORY.VERLEIH) return "📦 Verleih-Service";
   if (category === TICKET_CATEGORY.BEWERBUNG) return "📝 Bewerbung";
+  if (category === TICKET_CATEGORY.ABO) return "💳 Abo-Antrag";
   return "🎫 Support";
 }
 

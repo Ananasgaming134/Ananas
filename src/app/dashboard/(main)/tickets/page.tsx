@@ -1,6 +1,6 @@
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { openSupportTicket } from "@/app/actions/tickets";
+import SupportTicketForm from "@/components/SupportTicketForm";
 
 const STATUS_LABELS: Record<string, string> = {
   OPEN: "Offen",
@@ -30,28 +30,7 @@ export default async function TicketsPage() {
     <div className="space-y-6">
       <div className="card p-5">
         <h2 className="mb-3 text-sm font-semibold">Neues Support-Ticket</h2>
-        <form action={openSupportTicket} className="space-y-3">
-          <input
-            type="text"
-            name="subject"
-            required
-            maxLength={100}
-            placeholder="Worum geht's? (kurz)"
-            className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2"
-          />
-          <textarea
-            name="description"
-            rows={3}
-            placeholder="Beschreibung (optional)"
-            className="w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2"
-          />
-          <button
-            type="submit"
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110"
-          >
-            Ticket eröffnen
-          </button>
-        </form>
+        <SupportTicketForm />
       </div>
 
       <div className="space-y-3">
