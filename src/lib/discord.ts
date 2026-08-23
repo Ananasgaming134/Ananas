@@ -30,17 +30,27 @@ export const TICKET_CLAIM_CHANNEL_ID =
 export const TICKET_CLAIM_ROLE_ID =
   process.env.DISCORD_TICKET_CLAIM_ROLE_ID ?? "1469722757196677200";
 
-/** Owner-Rollen: duerfen immer alles - claimen, verwalten, direkt schliessen. */
+/**
+ * Owner-Rollen: duerfen immer alles - claimen, verwalten, direkt schliessen.
+ * Enthaelt neben den fest vorgegebenen Rollen auch die allgemeine
+ * Owner-Rolle aus DISCORD_ROLE_OWNER, damit beide Konfigurationswege greifen.
+ */
 export function ticketOwnerRoleIds(): string[] {
   const fromEnv = roleIdsFromEnv("DISCORD_TICKET_OWNER_ROLE_IDS");
-  if (fromEnv.length > 0) return fromEnv;
-  return ["1469712028049346743", "1477054018097385514"];
+  const base = fromEnv.length > 0 ? fromEnv : ["1469712028049346743", "1477054018097385514"];
+  return [...new Set([...base, ...roleIdsFromEnv("DISCORD_ROLE_OWNER")])];
 }
 
-/** Darf diese Person Tickets claimen/verwalten? Owner immer, sonst Claim-Rolle. */
+/** Aufsicht: darf claimen und Schliessanfragen stellen (nicht direkt schliessen). */
+export function ticketAufsichtRoleIds(): string[] {
+  return [...new Set([TICKET_CLAIM_ROLE_ID, ...roleIdsFromEnv("DISCORD_ROLE_AUFSICHT")].filter(Boolean))];
+}
+
+/** Darf diese Person Tickets claimen/verwalten? Aufsicht und Owner. */
 export function canClaimTicket(memberRoles: string[]): boolean {
-  if (memberRoles.some((r) => ticketOwnerRoleIds().includes(r))) return true;
-  return memberRoles.includes(TICKET_CLAIM_ROLE_ID);
+  if (isTicketOwner(memberRoles)) return true;
+  const aufsicht = ticketAufsichtRoleIds();
+  return memberRoles.some((r) => aufsicht.includes(r));
 }
 
 /** Owner duerfen Tickets auch ohne Claim direkt schliessen. */
@@ -661,6 +671,11 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
             name: "add",
             description: "Fügt eine Person zum aktuellen Ticket-Kanal hinzu (nur Owner/aktueller Claimer)",
             options: [{ type: 6, name: "user", description: "Wer hinzugefügt werden soll", required: true }], // USER
+          },
+          {
+            type: 1, // SUB_COMMAND
+            name: "schliessen",
+            description: "Schließt dieses Ticket (Owner sofort, Aufsicht per Anfrage an den Ersteller)",
           },
         ],
       },

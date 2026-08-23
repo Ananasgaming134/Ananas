@@ -15,6 +15,7 @@ import {
   grantChannelMemberAccess,
   revokeChannelSendPermission,
   roleIdsFromEnv,
+  ticketOwnerRoleIds,
 } from "@/lib/discord";
 import {
   TICKET_CLAIM_PREFIX,
@@ -174,14 +175,17 @@ async function provisionTicketChannel(
     footer: { text: `Ticket ${ticket.id.slice(-6)}` },
   };
 
+  // Owner werden bei JEDEM neuen Ticket direkt mit angepingt.
+  const ownerRoles = ticketOwnerRoleIds();
+  const ownerPing = ownerRoles.map((r) => `<@&${r}>`).join(" ");
+
   await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({
-      // Nur der Ersteller wird erwaehnt - keine Rollen-Pings im Thread.
-      content: `<@${ticket.applicantDiscordId}>`,
+      content: `<@${ticket.applicantDiscordId}> ${ownerPing}`.trim(),
       embeds: [embed],
-      allowed_mentions: { users: [ticket.applicantDiscordId] },
+      allowed_mentions: { users: [ticket.applicantDiscordId], roles: ownerRoles },
       components: [
         {
           type: 1,
@@ -228,9 +232,11 @@ async function postToQueue(
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({
-      // Zustaendige Rolle wird hier bewusst angepingt - das ist der
-      // Arbeitskanal des Teams, hier soll die Meldung auffallen.
-      content: `<@&${TICKET_CLAIM_ROLE_ID}>`,
+      // Zustaendige Rolle UND Owner werden hier bewusst angepingt - das ist
+      // der Arbeitskanal des Teams, hier soll die Meldung auffallen.
+      content: [TICKET_CLAIM_ROLE_ID, ...ticketOwnerRoleIds()]
+        .map((r) => `<@&${r}>`)
+        .join(" "),
       embeds: [
         {
           title: `${ticketLabel(category)} — neues Ticket`,
@@ -239,7 +245,7 @@ async function postToQueue(
           footer: { text: "Noch nicht übernommen" },
         },
       ],
-      allowed_mentions: { roles: [TICKET_CLAIM_ROLE_ID] },
+      allowed_mentions: { roles: [TICKET_CLAIM_ROLE_ID, ...ticketOwnerRoleIds()] },
       components: [
         {
           type: 1,
@@ -421,6 +427,46 @@ export async function requestTicketCloseCore(
   return { ok: true };
 }
 
+/** Frist, nach der eine unbeantwortete Schliessanfrage automatisch greift. */
+export const CLOSE_REQUEST_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Schliesst Tickets, deren Schliessanfrage seit 24 Stunden unbeantwortet ist.
+ * Laeuft per Cron - ohne das blieben Tickets ewig offen, nur weil der
+ * Ersteller nicht mehr reagiert. Wer ablehnt, setzt die Anfrage zurueck
+ * (declineTicketCloseCore) und ist damit von der Automatik ausgenommen.
+ */
+export async function autoCloseExpiredCloseRequests(): Promise<{ closed: number }> {
+  const cutoff = new Date(Date.now() - CLOSE_REQUEST_TIMEOUT_MS);
+
+  const due = await prisma.ticket.findMany({
+    where: {
+      status: { not: TICKET_STATUS.CLOSED },
+      closeRequestedAt: { not: null, lte: cutoff },
+    },
+    select: { id: true, closeRequestedById: true, discordChannelId: true },
+  });
+
+  let closed = 0;
+  for (const ticket of due) {
+    if (ticket.discordChannelId) {
+      await fetch(`${DISCORD_API}/channels/${ticket.discordChannelId}/messages`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          content: "⏳ Keine Rückmeldung innerhalb von 24 Stunden — das Ticket wird jetzt automatisch geschlossen.",
+          allowed_mentions: { parse: [] },
+        }),
+      }).catch(() => {});
+    }
+
+    const result = await closeTicketCore(ticket.id, ticket.closeRequestedById ?? null);
+    if (result.ok) closed += 1;
+  }
+
+  return { closed };
+}
+
 /** Der Ersteller lehnt die Schliessung ab - das Ticket bleibt offen. */
 export async function declineTicketCloseCore(ticketId: string): Promise<TicketActionResult> {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
@@ -450,7 +496,11 @@ export async function declineTicketCloseCore(ticketId: string): Promise<TicketAc
   return { ok: true };
 }
 
-export async function closeTicketCore(ticketId: string, actorId: string): Promise<TicketActionResult> {
+export async function closeTicketCore(
+  ticketId: string,
+  /** null bei automatischer Schliessung nach Fristablauf (kein Mensch beteiligt). */
+  actorId: string | null
+): Promise<TicketActionResult> {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) return { ok: false, error: "Ticket nicht gefunden." };
   if (ticket.status === TICKET_STATUS.CLOSED) return { ok: false, error: "Ticket ist bereits geschlossen." };

@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { InteractionResponseType, InteractionType, verifyKey } from "discord-interactions";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
@@ -14,6 +15,7 @@ import { applyAndOpenTicketCore } from "@/lib/applications";
 import {
   TICKET_PANEL_CHANNEL_ID,
   addThreadMember,
+  canClaimTicket,
   grantChannelMemberAccess,
   isTicketOwner,
 } from "@/lib/discord";
@@ -115,6 +117,46 @@ function ephemeral(content: string) {
   return Response.json({
     type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
     data: { content, flags: EPHEMERAL },
+  });
+}
+
+/**
+ * Discord verlangt eine Antwort innerhalb von 3 Sekunden, sonst gilt die
+ * Interaktion als fehlgeschlagen - fuer den Nutzer sieht es dann so aus, als
+ * haette der Klick nichts bewirkt. Ticket-Aktionen brauchen mehrere
+ * Discord-Aufrufe hintereinander und liegen damit gefaehrlich nah an der
+ * Grenze.
+ *
+ * Deshalb wird sofort "denkt nach" geantwortet (Typ 5) und die eigentliche
+ * Arbeit per after() nach dem Senden der Antwort erledigt. Das Ergebnis wird
+ * anschliessend in die urspruengliche Antwort nachgetragen - dafuer laesst
+ * Discord 15 Minuten Zeit.
+ */
+function deferAndRun(interaction: DiscordInteractionPayload, work: () => Promise<string>) {
+  const token = interaction.token;
+
+  after(async () => {
+    let content: string;
+    try {
+      content = await work();
+    } catch (err) {
+      console.error("[interactions] Aktion fehlgeschlagen:", err);
+      content = "❌ Da ist etwas schiefgelaufen. Bitte noch einmal versuchen.";
+    }
+
+    const appId = process.env.AUTH_DISCORD_ID ?? "";
+    if (!appId || !token) return;
+
+    await fetch(`https://discord.com/api/v10/webhooks/${appId}/${token}/messages/@original`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    }).catch((err) => console.error("[interactions] Nachtragen der Antwort fehlgeschlagen:", err));
+  });
+
+  return Response.json({
+    type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+    data: { flags: EPHEMERAL },
   });
 }
 
@@ -519,17 +561,17 @@ async function handleComponent(interaction: DiscordInteractionPayload) {
 
   if (customId.startsWith(TICKET_CLOSE_REQUEST_PREFIX)) {
     const ticketId = customId.slice(TICKET_CLOSE_REQUEST_PREFIX.length);
-    return handleTicketCloseRequest(ticketId, memberRoles, discordUser);
+    return handleTicketCloseRequest(ticketId, memberRoles, discordUser, interaction);
   }
 
   if (customId.startsWith(TICKET_CLOSE_CONFIRM_PREFIX)) {
     const ticketId = customId.slice(TICKET_CLOSE_CONFIRM_PREFIX.length);
-    return handleTicketCloseConfirm(ticketId, discordUser, true);
+    return handleTicketCloseConfirm(ticketId, discordUser, true, interaction);
   }
 
   if (customId.startsWith(TICKET_CLOSE_DECLINE_PREFIX)) {
     const ticketId = customId.slice(TICKET_CLOSE_DECLINE_PREFIX.length);
-    return handleTicketCloseConfirm(ticketId, discordUser, false);
+    return handleTicketCloseConfirm(ticketId, discordUser, false, interaction);
   }
 
   if (customId === TICKET_PLAN_SELECT_ID) {
@@ -704,21 +746,23 @@ async function handleModalSubmit(interaction: DiscordInteractionPayload) {
   if (customId === SUPPORT_MODAL_ID) {
     const subject = getModalValue(interaction, "subject") || "Support-Anfrage";
     const description = getModalValue(interaction, "description");
-    const member = await prisma.member.findUnique({ where: { discordId: discordUser.id } });
 
-    const result = await createTicketCore({
-      category: TICKET_CATEGORY.SUPPORT,
-      subject,
-      applicantDiscordId: discordUser.id,
-      memberId: member?.id ?? null,
-      initialMessage: description || undefined,
+    // Thread anlegen, Intro posten und Claim-Meldung senden dauert zusammen
+    // rund zwei Sekunden - zu knapp fuer Discords 3-Sekunden-Fenster.
+    return deferAndRun(interaction, async () => {
+      const member = await prisma.member.findUnique({ where: { discordId: discordUser.id } });
+      const result = await createTicketCore({
+        category: TICKET_CATEGORY.SUPPORT,
+        subject,
+        applicantDiscordId: discordUser.id,
+        memberId: member?.id ?? null,
+        initialMessage: description || undefined,
+      });
+
+      return result.ok
+        ? "✅ Ticket wurde erstellt — du wurdest zum privaten Thread hinzugefügt."
+        : `❌ ${result.error}`;
     });
-
-    return ephemeral(
-      result.ok
-        ? "✅ Ticket wurde erstellt — du findest den Kanal auch auf der Website unter „Meine Tickets“."
-        : `❌ ${result.error}`
-    );
   }
 
   if (customId.startsWith(BEWERBUNG_MODAL_PREFIX)) {
@@ -790,29 +834,30 @@ async function handleVerleihSubmit(
   }
 
   const displayName = discordUser.global_name ?? discordUser.username;
-  const result = await applyAndOpenTicketCore({
-    discordId: discordUser.id,
-    username: discordUser.username,
-    displayName,
-    avatarUrl: discordUser.avatar
-      ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
-      : null,
-    reason: banHistory || "—",
-    banHistory: banHistory || null,
-    declaredNetWorth: Number.isFinite(declaredNetWorth) ? declaredNetWorth : 0,
-    requestedPlanId: SUBSCRIPTION_PLANS[0].id,
-    source: "DISCORD",
-    minecraftName,
-    age,
-    playHours: Number.isFinite(playHours) ? playHours : 0,
-    ticketCategory: TICKET_CATEGORY.VERLEIH,
-  });
 
-  return ephemeral(
-    result.ok
+  return deferAndRun(interaction, async () => {
+    const result = await applyAndOpenTicketCore({
+      discordId: discordUser.id,
+      username: discordUser.username,
+      displayName,
+      avatarUrl: discordUser.avatar
+        ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.png`
+        : null,
+      reason: banHistory || "—",
+      banHistory: banHistory || null,
+      declaredNetWorth: Number.isFinite(declaredNetWorth) ? declaredNetWorth : 0,
+      requestedPlanId: SUBSCRIPTION_PLANS[0].id,
+      source: "DISCORD",
+      minecraftName,
+      age,
+      playHours: Number.isFinite(playHours) ? playHours : 0,
+      ticketCategory: TICKET_CATEGORY.VERLEIH,
+    });
+
+    return result.ok
       ? "✅ Deine Anfrage ist raus! Du wurdest zu einem privaten Ticket hinzugefügt — dort meldet sich gleich jemand."
-      : `❌ ${result.error}`
-  );
+      : `❌ ${result.error}`;
+  });
 }
 
 async function handleTicketClaim(
@@ -830,12 +875,12 @@ async function handleTicketClaim(
     return ephemeral("❌ Du hast nicht die erforderliche Rolle");
   }
 
-  const actor = await ensureMemberFromDiscordUser(discordUser);
-  const result = await claimTicketCore(ticketId, actor.id);
-  if (!result.ok) return ephemeral(`❌ ${result.error}`);
-
-  const actorLabel = discordUser.global_name ?? discordUser.username;
-  return ephemeral(`🙋 Ticket übernommen von ${actorLabel}.`);
+  return deferAndRun(interaction, async () => {
+    const actor = await ensureMemberFromDiscordUser(discordUser);
+    const result = await claimTicketCore(ticketId, actor.id);
+    if (!result.ok) return `❌ ${result.error}`;
+    return `🙋 Ticket übernommen von ${discordUser.global_name ?? discordUser.username}.`;
+  });
 }
 
 /**
@@ -845,35 +890,43 @@ async function handleTicketClaim(
 async function handleTicketCloseRequest(
   ticketId: string,
   memberRoles: string[],
-  discordUser: DiscordInteractionUser
+  discordUser: DiscordInteractionUser,
+  interaction: DiscordInteractionPayload
 ) {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) return ephemeral("Ticket nicht gefunden.");
 
-  const actor = await ensureMemberFromDiscordUser(discordUser);
-  const owner = isTicketOwner(memberRoles);
-  const isClaimer = ticket.claimedById === actor.id;
-
-  if (!owner && !isClaimer) {
+  // Nur Aufsicht und Owner - unabhaengig davon, wer geclaimt hat.
+  if (!canClaimTicket(memberRoles)) {
     return ephemeral("❌ Du hast nicht die erforderliche Rolle");
   }
 
-  if (owner) {
-    const result = await closeTicketCore(ticketId, actor.id);
-    return ephemeral(result.ok ? "🔒 Ticket direkt geschlossen." : `❌ ${result.error}`);
-  }
+  const owner = isTicketOwner(memberRoles);
 
-  const result = await requestTicketCloseCore(ticketId, actor.id);
-  return ephemeral(
-    result.ok ? "📨 Schließanfrage gesendet — der Ersteller muss noch bestätigen." : `❌ ${result.error}`
-  );
+  // Die Discord-Aktionen dauern gut eine Sekunde; ohne Aufschub laeuft die
+  // Interaktion in Discords 3-Sekunden-Grenze und wirkt fuer den Nutzer als
+  // waere nichts passiert.
+  return deferAndRun(interaction, async () => {
+    const actor = await ensureMemberFromDiscordUser(discordUser);
+
+    if (owner) {
+      const result = await closeTicketCore(ticketId, actor.id);
+      return result.ok ? "🔒 Ticket geschlossen." : `❌ ${result.error}`;
+    }
+
+    const result = await requestTicketCloseCore(ticketId, actor.id);
+    return result.ok
+      ? "📨 Schließanfrage gesendet — der Ersteller bestätigt oder lehnt ab. Ohne Antwort schließt das Ticket in 24 Stunden automatisch."
+      : `❌ ${result.error}`;
+  });
 }
 
 /** Antwort des Erstellers auf die Schliessanfrage (bestaetigen oder ablehnen). */
 async function handleTicketCloseConfirm(
   ticketId: string,
   discordUser: DiscordInteractionUser,
-  confirmed: boolean
+  confirmed: boolean,
+  interaction: DiscordInteractionPayload
 ) {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) return ephemeral("Ticket nicht gefunden.");
@@ -881,14 +934,16 @@ async function handleTicketCloseConfirm(
     return ephemeral("Nur die Person, die das Ticket eröffnet hat, kann das entscheiden.");
   }
 
-  if (!confirmed) {
-    const result = await declineTicketCloseCore(ticketId);
-    return ephemeral(result.ok ? "↩️ Alles klar, das Ticket bleibt offen." : `❌ ${result.error}`);
-  }
+  return deferAndRun(interaction, async () => {
+    if (!confirmed) {
+      const result = await declineTicketCloseCore(ticketId);
+      return result.ok ? "↩️ Alles klar, das Ticket bleibt offen." : `❌ ${result.error}`;
+    }
 
-  const actor = await ensureMemberFromDiscordUser(discordUser);
-  const result = await closeTicketCore(ticketId, actor.id);
-  return ephemeral(result.ok ? "🔒 Ticket geschlossen. Danke dir!" : `❌ ${result.error}`);
+    const actor = await ensureMemberFromDiscordUser(discordUser);
+    const result = await closeTicketCore(ticketId, actor.id);
+    return result.ok ? "🔒 Ticket geschlossen. Danke dir!" : `❌ ${result.error}`;
+  });
 }
 
 async function handleTicketClose(
@@ -984,7 +1039,33 @@ async function handleTicketAddCommand(interaction: DiscordInteractionPayload, in
   const discordUser = interaction.member?.user ?? interaction.user;
   const actor = discordUser ? await prisma.member.findUnique({ where: { discordId: discordUser.id } }) : null;
 
-  const isOwner = hasOwnerRole(invokerRoles);
+  const subcommandName = interaction.data?.options?.[0]?.name;
+
+  // "/ticket schliessen": Owner schliessen sofort, Aufsicht stellt eine
+  // Schliessanfrage an den Ersteller (der bestaetigen oder ablehnen kann).
+  if (subcommandName === "schliessen") {
+    if (!canClaimTicket(invokerRoles)) {
+      return ephemeral("❌ Du hast nicht die erforderliche Rolle");
+    }
+    if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
+
+    const owner = isTicketOwner(invokerRoles);
+    return deferAndRun(interaction, async () => {
+      const me = await ensureMemberFromDiscordUser(discordUser);
+
+      if (owner) {
+        const result = await closeTicketCore(ticket.id, me.id);
+        return result.ok ? "🔒 Ticket geschlossen." : `❌ ${result.error}`;
+      }
+
+      const result = await requestTicketCloseCore(ticket.id, me.id);
+      return result.ok
+        ? "📨 Schließanfrage gesendet — ohne Antwort schließt das Ticket in 24 Stunden automatisch."
+        : `❌ ${result.error}`;
+    });
+  }
+
+  const isOwner = hasOwnerRole(invokerRoles) || isTicketOwner(invokerRoles);
   const isClaimer = Boolean(actor && ticket.claimedById === actor.id);
   if (!isOwner && !isClaimer) {
     return ephemeral("Nur der Owner oder wer das Ticket übernommen hat, kann Leute hinzufügen.");

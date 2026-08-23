@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { enforceAccessRules } from "@/lib/accessControl";
+import { autoCloseExpiredCloseRequests } from "@/lib/tickets";
 import { processLoanReminders } from "@/lib/loanReminders";
 import { postSubscriptionReminders } from "@/lib/subscriptions";
 import { syncMinecraftNames } from "@/lib/verification";
@@ -35,6 +36,10 @@ export async function GET(request: Request) {
   // nicht bis zur naechsten vollen Stunde weiterbestehen.
   const access = await enforceAccessRules().catch((err) => ({ error: String(err) }));
 
+  // Unbeantwortete Schliessanfragen greifen nach 24 Stunden automatisch -
+  // laeuft minuetlich mit, damit die Frist auf die Minute genau endet.
+  const ticketAutoClose = await autoCloseExpiredCloseRequests().catch((err) => ({ error: String(err) }));
+
   const hourly = url.searchParams.get("hourly") === "1" || new Date().getMinutes() === 0;
   let subscriptions: unknown = "übersprungen";
   let nameSync: unknown = "übersprungen";
@@ -44,5 +49,5 @@ export async function GET(request: Request) {
     nameSync = await syncMinecraftNames().catch((err) => ({ error: String(err) }));
   }
 
-  return NextResponse.json({ ok: true, ...result, access, subscriptions, nameSync });
+  return NextResponse.json({ ok: true, ...result, access, ticketAutoClose, subscriptions, nameSync });
 }

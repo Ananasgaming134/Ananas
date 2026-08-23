@@ -86,6 +86,8 @@ export type DiscordInteractionPayload = {
     // Nur bei MODAL_SUBMIT gesetzt: eine Action-Row je Textfeld.
     components?: Array<{ components: Array<{ custom_id: string; value: string }> }>;
   };
+  /** Interaktions-Token: noetig, um eine aufgeschobene Antwort nachzutragen. */
+  token?: string;
 };
 
 /** Liest ein Textfeld aus einem MODAL_SUBMIT-Payload anhand seiner custom_id aus. */
