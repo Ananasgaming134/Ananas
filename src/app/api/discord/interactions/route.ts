@@ -206,6 +206,10 @@ async function handleCommand(interaction: DiscordInteractionPayload) {
     return handleTicketAddCommand(interaction, invokerRoles);
   }
 
+  if (commandName === "ticket-schliessen") {
+    return handleTicketCloseCommand(interaction, invokerRoles);
+  }
+
   if (commandName === "statistik") {
     const discordUser = interaction.member?.user ?? interaction.user;
     if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
@@ -1087,6 +1091,42 @@ async function handleAboCommand(interaction: DiscordInteractionPayload, invokerR
  * Owner oder die Person, die das Ticket geclaimt hat, darf weitere Leute
  * hinzufuegen (siehe Plan: Warteschlangen-Modell mit Einzel-Claim-Zugriff).
  */
+/**
+ * Schliessanfrage fuer das Ticket, in dessen Thread der Befehl ausgefuehrt
+ * wird. Erreichbar als "/ticket-schliessen" und als "/ticket schliessen" -
+ * der eigenstaendige Befehl existiert, weil "/ticket" mit gleichnamigen
+ * Befehlen anderer Bots kollidieren kann und dann im Client fehlt.
+ *
+ * Schliesst nie direkt: der Ersteller (oder ein Owner) bestaetigt, sonst
+ * greift nach 24 Stunden die Automatik.
+ */
+async function handleTicketCloseCommand(
+  interaction: DiscordInteractionPayload,
+  invokerRoles: string[]
+) {
+  const channelId = interaction.channel_id;
+  if (!channelId) return ephemeral("Nur innerhalb eines Ticket-Threads nutzbar.");
+
+  const ticket = await prisma.ticket.findFirst({ where: { discordChannelId: channelId } });
+  if (!ticket) return ephemeral("Das hier ist kein Ticket-Thread.");
+  if (ticket.status === "CLOSED") return ephemeral("Dieses Ticket ist bereits geschlossen.");
+
+  if (!canClaimTicket(invokerRoles)) {
+    return ephemeral("❌ Du hast nicht die erforderliche Rolle");
+  }
+
+  const discordUser = interaction.member?.user ?? interaction.user;
+  if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
+
+  return deferAndRun(interaction, async () => {
+    const me = await ensureMemberFromDiscordUser(discordUser);
+    const result = await requestTicketCloseCore(ticket.id, me.id);
+    return result.ok
+      ? "📨 Schließanfrage gestellt — der Ersteller (oder ein Owner) bestätigt. Ohne Antwort schließt das Ticket in 24 Stunden automatisch."
+      : `❌ ${result.error}`;
+  });
+}
+
 async function handleTicketAddCommand(interaction: DiscordInteractionPayload, invokerRoles: string[]) {
   const channelId = interaction.channel_id;
   if (!channelId) return ephemeral("Nur innerhalb eines Ticket-Kanals nutzbar.");
@@ -1098,24 +1138,8 @@ async function handleTicketAddCommand(interaction: DiscordInteractionPayload, in
   const actor = discordUser ? await prisma.member.findUnique({ where: { discordId: discordUser.id } }) : null;
 
   const subcommandName = interaction.data?.options?.[0]?.name;
-
-  // "/ticket schliessen": Owner schliessen sofort, Aufsicht stellt eine
-  // Schliessanfrage an den Ersteller (der bestaetigen oder ablehnen kann).
   if (subcommandName === "schliessen") {
-    if (!canClaimTicket(invokerRoles)) {
-      return ephemeral("❌ Du hast nicht die erforderliche Rolle");
-    }
-    if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
-
-    // Der Befehl schliesst nie direkt, sondern stellt immer die Anfrage an den
-    // Ersteller - bestaetigen koennen dann er selbst oder Owner/Devs.
-    return deferAndRun(interaction, async () => {
-      const me = await ensureMemberFromDiscordUser(discordUser);
-      const result = await requestTicketCloseCore(ticket.id, me.id);
-      return result.ok
-        ? "📨 Schließanfrage gestellt — der Ersteller (oder ein Owner) bestätigt. Ohne Antwort schließt das Ticket in 24 Stunden automatisch."
-        : `❌ ${result.error}`;
-    });
+    return handleTicketCloseCommand(interaction, invokerRoles);
   }
 
   const isOwner = hasOwnerRole(invokerRoles) || isTicketOwner(invokerRoles);

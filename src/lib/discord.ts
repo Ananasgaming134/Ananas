@@ -663,6 +663,13 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
         description: "Postet das Ticket-Panel (Support + Verleih-Service) in den Ticket-Kanal (nur Owner)",
       },
       {
+        // Eigener Befehl zusaetzlich zu "/ticket schliessen": ein blosser
+        // Unterbefehl von "/ticket" kann mit gleichnamigen Befehlen anderer
+        // Bots kollidieren und taucht dann im Client nicht auf.
+        name: "ticket-schliessen",
+        description: "Stellt die Schließanfrage für dieses Ticket (Aufsicht/Owner)",
+      },
+      {
         name: "ticket",
         description: "Ticket-Verwaltung (nur für Aufsicht/Owner)",
         options: [
