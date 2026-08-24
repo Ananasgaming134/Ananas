@@ -138,7 +138,7 @@ export default async function Home() {
   return (
     <main className="landing relative">
       <LandingAmbient />
-      <LandingHeader loggedIn={loggedIn} />
+      <LandingHeader loggedIn={loggedIn} hatKooperationen={partners.length > 0} />
 
       {/* ---------------------------------------------------------------- */}
       {/* Kopfbereich                                                       */}

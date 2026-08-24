@@ -11,7 +11,7 @@ export type PartnerCard = {
   avatarUrl: string | null;
 };
 
-const WECHSEL_MS = 7000;
+const WECHSEL_MS = 3500;
 
 /**
  * Zeigt die Visitenkarten der Kooperationen. Bei genau einer Karte steht sie

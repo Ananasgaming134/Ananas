@@ -9,6 +9,9 @@ const LINKS = [
   { href: "#zahlen", label: "Zahlen" },
   { href: "#stimmen", label: "Stimmen" },
   { href: "#team", label: "Team" },
+  // Der Abschnitt existiert nur, wenn Kooperationen gepflegt sind - sonst
+  // wuerde der Punkt ins Leere fuehren.
+  { href: "#kooperationen", label: "Kooperationen", nurMitPartnern: true },
   { href: "#fragen", label: "Fragen" },
 ];
 
@@ -17,7 +20,13 @@ const LINKS = [
  * erst beim Scrollen als kompakte Leiste mit Hintergrund an - so bleibt der
  * Einstieg offen und die Navigation trotzdem immer erreichbar.
  */
-export default function LandingHeader({ loggedIn }: { loggedIn: boolean }) {
+export default function LandingHeader({
+  loggedIn,
+  hatKooperationen,
+}: {
+  loggedIn: boolean;
+  hatKooperationen: boolean;
+}) {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -41,8 +50,8 @@ export default function LandingHeader({ loggedIn }: { loggedIn: boolean }) {
           <span className="font-display text-base font-extrabold tracking-tight">{SITE_NAME}</span>
         </Link>
 
-        <nav className="hidden items-center gap-1 md:flex">
-          {LINKS.map((link) => (
+        <nav className="hidden items-center gap-1 lg:flex">
+          {LINKS.filter((link) => !link.nurMitPartnern || hatKooperationen).map((link) => (
             <a key={link.href} href={link.href} className="nav-pill">
               {link.label}
             </a>
