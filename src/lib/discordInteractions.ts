@@ -47,6 +47,9 @@ export const ITEM_SEARCH_PAGE_PREFIX = "leihcenter_search_page:";
 export const TICKET_OPEN_SUPPORT_ID = "leihcenter_ticket_open_support";
 export const TICKET_OPEN_BEWERBUNG_ID = "leihcenter_ticket_open_bewerbung";
 export const TICKET_PLAN_SELECT_ID = "leihcenter_ticket_plan_select";
+
+/** Paketauswahl beim Verlaengern per /verlaengern ohne Argument. */
+export const RENEW_SELECT_ID = "leihcenter_renew_select";
 export const TICKET_CLAIM_PREFIX = "leihcenter_ticket_claim:";
 export const TICKET_CLOSE_PREFIX = "leihcenter_ticket_close:";
 export const SUPPORT_MODAL_ID = "leihcenter_support_modal";

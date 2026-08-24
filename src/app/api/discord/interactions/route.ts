@@ -61,6 +61,7 @@ import {
   TICKET_OPEN_SUPPORT_ID,
   TICKET_OPEN_VERLEIH_ID,
   TICKET_PLAN_SELECT_ID,
+  RENEW_SELECT_ID,
   VERLEIH_MODAL_ID,
   buildAkteEmbedForDiscord,
   ensureMemberFromDiscordUser,
@@ -149,7 +150,16 @@ function ephemeral(content: string) {
  * anschliessend in die urspruengliche Antwort nachgetragen - dafuer laesst
  * Discord 15 Minuten Zeit.
  */
-function deferAndRun(interaction: DiscordInteractionPayload, work: () => Promise<string>) {
+function deferAndRun(
+  interaction: DiscordInteractionPayload,
+  work: () => Promise<string>,
+  /**
+   * "update" ersetzt die Nachricht, an der das Auswahlmenue haengt, und
+   * entfernt dabei die Bedienelemente - sonst koennte man dasselbe Menue ein
+   * zweites Mal benutzen und aus Versehen doppelt buchen.
+   */
+  mode: "reply" | "update" = "reply"
+) {
   const token = interaction.token;
 
   after(async () => {
@@ -167,13 +177,16 @@ function deferAndRun(interaction: DiscordInteractionPayload, work: () => Promise
     await fetch(`https://discord.com/api/v10/webhooks/${appId}/${token}/messages/@original`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(mode === "update" ? { content, components: [], embeds: [] } : { content }),
     }).catch((err) => console.error("[interactions] Nachtragen der Antwort fehlgeschlagen:", err));
   });
 
   return Response.json({
-    type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
-    data: { flags: EPHEMERAL },
+    type:
+      mode === "update"
+        ? InteractionResponseType.DEFERRED_UPDATE_MESSAGE
+        : InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+    data: mode === "update" ? undefined : { flags: EPHEMERAL },
   });
 }
 
@@ -552,6 +565,18 @@ async function handleComponent(interaction: DiscordInteractionPayload) {
   if (customId.startsWith(RENEW_PREFIX)) {
     const param = customId.slice(RENEW_PREFIX.length);
     return handleRenew(param, memberRoles, discordUser, interaction);
+  }
+
+  // Paket aus der Auswahl von /verlaengern - ersetzt die Auswahl-Nachricht,
+  // damit dasselbe Menue nicht zweimal benutzt werden kann.
+  if (customId === RENEW_SELECT_ID) {
+    const planId = interaction.data?.values?.[0];
+    if (!planId) return ephemeral("Kein Paket ausgewählt.");
+
+    const member = await prisma.member.findUnique({ where: { discordId: discordUser.id } });
+    if (!member) return ephemeral("Für dich existiert noch keine Akte im LeihCenter.");
+
+    return runRenewal(interaction, member.id, planId, "update");
   }
 
   if (customId === TICKET_OPEN_SUPPORT_ID) {
@@ -1220,19 +1245,86 @@ async function handleRenewCommand(
   if (!member) return ephemeral("Für dich existiert noch keine Akte im LeihCenter.");
 
   const chosen = interaction.data?.options?.find((o) => o.name === "paket")?.value;
-  const planId = chosen ? String(chosen) : member.subscriptionPlan;
-  if (!planId) {
-    return ephemeral(
-      "Du hast noch kein Paket. Wähle eins mit `/verlaengern paket:<Paket>` — oder auf der Website unter „Abo“."
-    );
-  }
 
-  return deferAndRun(interaction, async () => {
-    const result = await renewOwnSubscriptionCore(member.id, planId);
-    if (!result.ok) return `❌ ${result.error}`;
-    const unix = Math.floor(result.newExpiry.getTime() / 1000);
-    return `✅ **${result.plan.label}** gebucht (${formatCoins(result.plan.price)} abgebucht).\nLäuft jetzt bis <t:${unix}:D> (<t:${unix}:R>).`;
+  // Ohne ausgewaehltes Paket wird NICHT stillschweigend das bisherige
+  // verlaengert - stattdessen kommt dieselbe Auswahl wie auf der Website,
+  // damit man bewusst entscheidet (und auch auf einen anderen Tarif wechseln
+  // kann).
+  if (!chosen) return respondWithRenewSelect(member);
+
+  return runRenewal(interaction, member.id, String(chosen), "reply");
+}
+
+/**
+ * Paketauswahl zum Verlaengern - zeigt zu jedem Tarif den Preis, das neue
+ * Laufzeitende und ob das Guthaben reicht.
+ */
+function respondWithRenewSelect(member: { balance: number; feePaidUntil: Date | null; subscriptionPlan: string | null }) {
+  const now = new Date();
+  const base = member.feePaidUntil && member.feePaidUntil > now ? member.feePaidUntil : now;
+
+  const options = SUBSCRIPTION_PLANS.map((plan) => {
+    const end = new Date(base);
+    end.setMonth(end.getMonth() + plan.months);
+    const affordable = member.balance >= plan.price;
+    return {
+      label: `${plan.label} — ${formatCoins(plan.price)}`,
+      value: plan.id,
+      description: affordable
+        ? `Läuft dann bis ${end.toLocaleDateString("de-DE")}${plan.id === member.subscriptionPlan ? " · dein aktueller Tarif" : ""}`
+        : `Guthaben reicht nicht (fehlen ${formatCoins(plan.price - member.balance)})`,
+      emoji: { name: affordable ? "✅" : "🚫" },
+    };
   });
+
+  const laufzeit = member.feePaidUntil
+    ? member.feePaidUntil > now
+      ? `Dein Abo läuft noch bis **${member.feePaidUntil.toLocaleDateString("de-DE")}** — die gewählte Dauer kommt oben drauf.`
+      : `Dein Abo ist am **${member.feePaidUntil.toLocaleDateString("de-DE")}** abgelaufen.`
+    : "Du hast noch kein Abo.";
+
+  return Response.json({
+    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+    data: {
+      content: `**Welches Paket möchtest du buchen?**
+${laufzeit}
+Dein Guthaben: **${formatCoins(member.balance)}**`,
+      flags: EPHEMERAL,
+      components: [
+        {
+          type: 1,
+          components: [
+            {
+              type: 3,
+              custom_id: RENEW_SELECT_ID,
+              placeholder: "Paket auswählen...",
+              options,
+            },
+          ],
+        },
+      ],
+    },
+  });
+}
+
+/** Bucht das gewaehlte Paket vom Guthaben ab und meldet das Ergebnis zurueck. */
+function runRenewal(
+  interaction: DiscordInteractionPayload,
+  memberId: string,
+  planId: string,
+  mode: "reply" | "update"
+) {
+  return deferAndRun(
+    interaction,
+    async () => {
+      const result = await renewOwnSubscriptionCore(memberId, planId);
+      if (!result.ok) return `❌ ${result.error}`;
+      const unix = Math.floor(result.newExpiry.getTime() / 1000);
+      return `✅ **${result.plan.label}** gebucht (${formatCoins(result.plan.price)} abgebucht).
+Läuft jetzt bis <t:${unix}:D> (<t:${unix}:R>).`;
+    },
+    mode
+  );
 }
 
 /**
