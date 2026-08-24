@@ -7,7 +7,7 @@
 export default function LandingAmbient() {
   return (
     <div className="landing-ambient" aria-hidden>
-      <div className="bg-grid animate-drift-grid absolute inset-0 opacity-[0.35]" />
+      <div className="bg-grid animate-drift-grid absolute inset-0 opacity-40" />
 
       <div className="ambient-blob ambient-blob-a animate-float-a" />
       <div className="ambient-blob ambient-blob-b animate-float-b" />

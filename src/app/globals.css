@@ -299,13 +299,21 @@ body {
   background: transparent;
 }
 
+/* Kein negativer z-index: der Hintergrund der Seite selbst liegt sonst
+   davor und die Flaechen sind gar nicht zu sehen. Stattdessen liegt die
+   Ebene bei 0 und der Inhalt darueber (Regel darunter). */
 .landing-ambient {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   overflow: hidden;
   pointer-events: none;
   background: var(--landing-ground);
+}
+.landing > section,
+.landing > footer {
+  position: relative;
+  z-index: 1;
 }
 
 .ambient-blob {
@@ -318,27 +326,27 @@ body {
   left: -10rem;
   height: 40rem;
   width: 40rem;
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .ambient-blob-b {
   top: 28%;
   right: -14rem;
   height: 34rem;
   width: 34rem;
-  background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+  background: color-mix(in srgb, var(--accent-2) 15%, transparent);
 }
 .ambient-blob-c {
   bottom: -16rem;
   left: 28%;
   height: 38rem;
   width: 38rem;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
 }
 
 .ambient-vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at center, transparent 0%, var(--landing-ground) 88%);
+  background: radial-gradient(ellipse at center, transparent 25%, color-mix(in srgb, var(--landing-ground) 70%, transparent) 100%);
 }
 
 .section-pad {
