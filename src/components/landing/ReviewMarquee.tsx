@@ -13,9 +13,15 @@ function ReviewCard({ review }: { review: PublicReview }) {
   return (
     <figure className="card mx-2 flex w-[19rem] shrink-0 flex-col gap-3 p-5 sm:w-[22rem]">
       <Stars rating={review.rating} />
-      <blockquote className="line-clamp-4 text-sm leading-relaxed text-foreground/90">
-        „{review.comment}“
-      </blockquote>
+      {review.comment ? (
+        <blockquote className="line-clamp-4 text-sm leading-relaxed text-foreground/90">
+          „{review.comment}“
+        </blockquote>
+      ) : (
+        <p className="text-sm leading-relaxed text-muted">
+          Hat uns mit {review.rating} von 5 Sternen bewertet.
+        </p>
+      )}
       <figcaption className="mt-auto flex items-center gap-2.5 pt-1">
         {review.avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -52,13 +58,18 @@ export default function ReviewMarquee({
 }) {
   if (reviews.length === 0) return null;
 
+  // Bei wenigen Bewertungen wird die Liste so oft wiederholt, bis das Band
+  // breit genug ist - sonst zieht eine einzelne Karte durch viel Leere.
+  const gefuellt: PublicReview[] = [];
+  while (gefuellt.length < 8) gefuellt.push(...reviews);
+
   return (
     <div className="marquee">
       <div
         className={`marquee-track${reverse ? " marquee-track-reverse" : ""}`}
         style={{ animationDuration: `${speed}s` }}
       >
-        {[...reviews, ...reviews].map((review, i) => (
+        {[...gefuellt, ...gefuellt].map((review, i) => (
           <ReviewCard key={`${review.id}-${i}`} review={review} />
         ))}
       </div>

@@ -135,8 +135,8 @@ export default function VoxelField() {
 
       ctx.clearRect(0, 0, width, height);
 
-      const originX = width / 2 + pointerX * 26;
-      const originY = height * 0.34 + pointerY * 14;
+      const originX = width * (width < 900 ? 0.5 : 0.72) + pointerX * 26;
+      const originY = height * 0.2 + pointerY * 14;
 
       for (const cube of cubes) {
         const { col, row } = cube;

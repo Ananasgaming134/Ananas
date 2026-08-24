@@ -5,8 +5,10 @@ import { useEffect, useRef, useState } from "react";
 function format(value: number, prefix: string, compact: boolean): string {
   if (!compact) return prefix + new Intl.NumberFormat("de-DE").format(Math.round(value));
   const abs = Math.abs(value);
-  if (abs >= 1_000_000_000) return `${prefix}${(value / 1_000_000_000).toFixed(2)} Mrd.`;
-  if (abs >= 1_000_000) return `${prefix}${(value / 1_000_000).toFixed(1)} Mio.`;
+  const de = (n: number, stellen: number) =>
+    n.toLocaleString("de-DE", { minimumFractionDigits: stellen, maximumFractionDigits: stellen });
+  if (abs >= 1_000_000_000) return `${prefix}${de(value / 1_000_000_000, 2)} Mrd.`;
+  if (abs >= 1_000_000) return `${prefix}${de(value / 1_000_000, 1)} Mio.`;
   return prefix + new Intl.NumberFormat("de-DE").format(Math.round(value));
 }
 

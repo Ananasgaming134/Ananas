@@ -65,29 +65,31 @@ export function renderStars(rating: number): string {
 export type PublicReview = {
   id: string;
   rating: number;
-  comment: string;
+  comment: string | null;
   displayName: string;
   avatarUrl: string | null;
   createdAt: Date;
 };
 
 /**
- * Bewertungen fuer das Laufband auf der Startseite - nur solche mit
- * geschriebenem Text, denn eine reine Sternezahl liest sich im Vorbeiziehen
- * nicht als Empfehlung.
+ * Bewertungen fuer das Laufband auf der Startseite. Auch Bewertungen ohne
+ * geschriebenen Text kommen mit - sonst wiederholt sich bei wenigen
+ * Kommentaren immer dieselbe Karte. Bewertungen mit Text stehen vorne.
  */
 export async function getPublicReviews(limit = 24): Promise<PublicReview[]> {
   const rows = await prisma.review.findMany({
-    where: { NOT: { comment: null }, comment: { not: "" } },
     orderBy: { createdAt: "desc" },
     take: limit,
     include: { member: { select: { displayName: true, avatarUrl: true } } },
   });
 
-  return rows.map((r) => ({
+  const mitText = rows.filter((r) => r.comment && r.comment.trim() !== "");
+  const ohneText = rows.filter((r) => !r.comment || r.comment.trim() === "");
+
+  return [...mitText, ...ohneText].map((r) => ({
     id: r.id,
     rating: r.rating,
-    comment: r.comment ?? "",
+    comment: r.comment?.trim() || null,
     displayName: r.member.displayName,
     avatarUrl: r.member.avatarUrl,
     createdAt: r.createdAt,

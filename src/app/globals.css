@@ -318,8 +318,8 @@ body {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, var(--landing-ground) 8%, color-mix(in srgb, var(--landing-ground) 55%, transparent) 55%, transparent 85%),
-    linear-gradient(to bottom, transparent 40%, var(--landing-ground) 96%);
+    linear-gradient(90deg, var(--landing-ground) 30%, color-mix(in srgb, var(--landing-ground) 60%, transparent) 52%, transparent 78%),
+    linear-gradient(to bottom, transparent 55%, var(--landing-ground) 98%);
 }
 
 .badge-live {

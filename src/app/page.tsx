@@ -123,9 +123,10 @@ export default async function Home() {
   const teamCount = teamGroups.reduce((sum, g) => sum + g.members.length, 0);
 
   // Zwei versetzte Baender lesen sich lebendiger als eine lange Reihe.
+  const zweiReihen = reviews.length >= 6;
   const half = Math.ceil(reviews.length / 2);
-  const reihe1 = reviews.slice(0, half);
-  const reihe2 = reviews.slice(half);
+  const reihe1 = zweiReihen ? reviews.slice(0, half) : reviews;
+  const reihe2 = zweiReihen ? reviews.slice(half) : [];
 
   return (
     <main className="landing relative">
@@ -135,12 +136,12 @@ export default async function Home() {
       {/* Kopfbereich                                                       */}
       {/* ---------------------------------------------------------------- */}
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 -z-10">
+        <div className="absolute inset-0 overflow-hidden">
           <VoxelField />
           <div className="hero-veil" />
         </div>
 
-        <div className="relative mx-auto max-w-6xl px-6 pb-28 pt-20 sm:pt-28">
+        <div className="relative z-10 mx-auto max-w-6xl px-6 pb-28 pt-20 sm:pt-28">
           <div className="max-w-3xl">
             <span className="badge-live fade-up">
               <span className="badge-dot" />
@@ -184,7 +185,7 @@ export default async function Home() {
         </div>
 
         {/* Kennzahlen-Band als Abschluss des Kopfbereichs */}
-        <div className="relative border-y border-border/60 bg-surface/30 backdrop-blur-sm">
+        <div className="relative z-10 border-y border-border/60 bg-surface/30 backdrop-blur-sm">
           <div className="mx-auto grid max-w-6xl grid-cols-2 divide-x divide-border/60 px-6 lg:grid-cols-4">
             <StatBand
               value={<CountUp value={stats.totalValue} prefix="$" compact />}
@@ -196,7 +197,7 @@ export default async function Home() {
               value={
                 reviewSummary.count > 0 ? (
                   <>
-                    {reviewSummary.average.toFixed(1)}
+                    {reviewSummary.average.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                     <span className="text-muted">/5</span>
                   </>
                 ) : (
@@ -296,7 +297,7 @@ export default async function Home() {
                 title="Was unsere Kunden sagen"
                 description={
                   reviewSummary.count > 0
-                    ? `Durchschnittlich ${reviewSummary.average.toFixed(1)} von 5 Sternen aus ${reviewSummary.count} Bewertung${reviewSummary.count === 1 ? "" : "en"}.`
+                    ? `Durchschnittlich ${reviewSummary.average.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} von 5 Sternen aus ${reviewSummary.count} Bewertung${reviewSummary.count === 1 ? "" : "en"}.`
                     : undefined
                 }
               />
