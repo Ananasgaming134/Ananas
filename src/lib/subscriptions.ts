@@ -119,12 +119,13 @@ export async function setSubscriptionPlanCore(
 }
 
 /**
- * Selbstbedienung fuer Kunden: das EIGENE Paket erneut buchen (verlaengern)
- * oder - falls noch gar kein Abo besteht - das erste Paket waehlen. Beides
- * wird sofort vom Guthaben abgebucht, ohne Freigabe.
+ * Selbstbedienung fuer Kunden: Abo abschliessen oder verlaengern - mit dem
+ * bisherigen Paket ODER einem anderen Tarif. Reicht das Guthaben, wird sofort
+ * abgebucht und die Laufzeit verlaengert; eine Freigabe braucht es nicht.
  *
- * Ein Wechsel auf ein ANDERES Paket laeuft bewusst weiter ueber den Antrag
- * (requestPlanChangeCore), damit die Aufsicht das mitbekommt.
+ * Der Antrag ueber ein Ticket (requestPlanChangeCore) bleibt zusaetzlich
+ * bestehen - fuer Faelle, in denen das Guthaben noch nicht reicht oder die
+ * Zahlung ausserhalb der Business-Card abgewickelt werden soll.
  */
 export async function renewOwnSubscriptionCore(
   memberId: string,
@@ -132,14 +133,6 @@ export async function renewOwnSubscriptionCore(
 ): Promise<SetSubscriptionResult> {
   const member = await prisma.member.findUnique({ where: { id: memberId } });
   if (!member) return { ok: false, error: "Mitglied nicht gefunden." };
-
-  if (member.subscriptionPlan && member.subscriptionPlan !== planId) {
-    const current = getSubscriptionPlan(member.subscriptionPlan);
-    return {
-      ok: false,
-      error: `Du hast aktuell „${current?.label ?? member.subscriptionPlan}“. Ein Wechsel auf ein anderes Paket muss beantragt werden — das geht auf der Website unter „Abo“.`,
-    };
-  }
 
   return setSubscriptionPlanCore(memberId, planId, memberId);
 }

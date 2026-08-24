@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import PlanChangeRequestForm from "@/components/PlanChangeRequestForm";
+import PlanPurchaseForm from "@/components/PlanPurchaseForm";
 import GraceCountdown from "@/components/GraceCountdown";
 import { SUBSCRIPTION_PLANS, formatCoins } from "@/lib/constants";
 
@@ -136,12 +137,24 @@ export default async function AboPage() {
         </p>
       </div>
 
-      {/* Auch ohne laufendes Abo beantragbar - sonst haetten neue Kunden gar
-          keine Moeglichkeit, ihr erstes Paket anzufragen. */}
       <div className="fade-up card space-y-3 p-5">
         <h2 className="text-sm font-semibold">
-          {member.subscriptionPlan ? "Paket wechseln" : "Abo beantragen"}
+          {member.subscriptionPlan ? "Abo verlängern oder Tarif wechseln" : "Abo abschließen"}
         </h2>
+        <p className="text-sm text-muted">
+          Wähle dein Paket — auch ein anderer Tarif als bisher ist möglich. Reicht dein Guthaben,
+          wird der Betrag sofort abgebucht und die Laufzeit verlängert. Eine laufende Restzeit
+          bleibt dabei erhalten, das neue Paket wird hinten drangehängt.
+        </p>
+        <PlanPurchaseForm
+          plans={SUBSCRIPTION_PLANS}
+          currentPlanId={member.subscriptionPlan}
+          balance={member.balance}
+        />
+      </div>
+
+      <div className="fade-up card space-y-3 p-5">
+        <h2 className="text-sm font-semibold">Lieber vorher besprechen?</h2>
         {pendingChange ? (
           <div className="rounded-lg border border-accent/30 bg-accent/5 p-4">
             <p className="text-sm font-medium text-accent">⏳ Antrag läuft</p>
@@ -152,17 +165,15 @@ export default async function AboPage() {
                   pendingChange.requestedPlanId}
               </span>{" "}
               ist eingereicht. In Discord wurde dazu ein Ticket geöffnet, in dem der Owner
-              bestätigt oder ablehnt — schau dort rein, falls es Rückfragen gibt.
+              bestätigt oder ablehnt.
             </p>
           </div>
         ) : (
           <>
             <p className="text-sm text-muted">
-              {member.subscriptionPlan
-                ? "Möchtest du ein anderes Paket? Der Wechsel gilt ab deiner nächsten Verlängerung — deine aktuelle Laufzeit bleibt unangetastet."
-                : "Wähle das Paket, das du haben möchtest."}{" "}
-              Du brauchst dafür bereits genug Guthaben. Nach dem Absenden öffnet sich in Discord
-              automatisch ein Ticket, in dem der Owner entscheidet.
+              Reicht dein Guthaben noch nicht, oder willst du außerhalb der Business-Card zahlen?
+              Dann stell hier einen Antrag — es öffnet sich automatisch ein Ticket in Discord, in
+              dem ihr das gemeinsam klärt.
             </p>
             <PlanChangeRequestForm
               plans={SUBSCRIPTION_PLANS}

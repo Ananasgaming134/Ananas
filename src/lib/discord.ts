@@ -713,12 +713,12 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
       },
       {
         name: "verlaengern",
-        description: "Verlängert dein Abo direkt von deinem Guthaben",
+        description: "Abo abschließen oder verlängern — direkt von deinem Guthaben",
         options: [
           {
             type: 3, // STRING
             name: "paket",
-            description: "Nur nötig, wenn du noch kein Abo hast",
+            description: "Welches Paket — auch ein anderer Tarif als bisher",
             required: false,
             choices: SUBSCRIPTION_PLANS.map((p) => ({ name: p.label, value: p.id })),
           },
