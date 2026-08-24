@@ -2,7 +2,8 @@ import { Client, GatewayIntentBits, type GuildMember, type PartialGuildMember } 
 import { WORTKETTEN_CHANNEL_ID } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
 import { processWordChainAttempt } from "@/lib/wordChain";
-import { roleIdsFromEnv } from "@/lib/discord";
+import { roleIdsFromEnv, DISCORD_PAYMENTS_CHANNEL_ID } from "@/lib/discord";
+import { checkForNewPayments } from "@/lib/payments";
 import {
   revokeAccessAndRole,
   startGracePeriodIfNeeded,
@@ -44,6 +45,18 @@ async function handleMessage(message: {
   content: string;
   react: (emoji: string) => Promise<unknown>;
 }) {
+  // Zahlungskanal zuerst - die Buchungen dort schreibt ein Bot, deshalb
+  // VOR der Bot-Abfrage. Guthaben wird so in dem Moment gutgeschrieben, in
+  // dem die Überweisung eingeht, nicht erst beim naechsten Cron-Lauf.
+  if (DISCORD_PAYMENTS_CHANNEL_ID && message.channelId === DISCORD_PAYMENTS_CHANNEL_ID) {
+    void checkForNewPayments()
+      .then((r) => {
+        if (r.ok && r.found > 0) console.log(`[zahlungen] ${r.found} neue Zahlung(en) verbucht.`);
+      })
+      .catch((err) => console.error("[zahlungen] Sofortige Prüfung fehlgeschlagen:", err));
+    return;
+  }
+
   if (message.author.bot) return;
 
   void keepTicketThreadAlive(message.channelId).catch(() => {});

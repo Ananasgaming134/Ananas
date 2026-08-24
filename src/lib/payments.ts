@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { DISCORD_BOT_TOKEN, DISCORD_PAYMENTS_CHANNEL_ID } from "@/lib/discord";
+import { DISCORD_BOT_TOKEN, DISCORD_PAYMENTS_CHANNEL_ID, sendDiscordDirectMessage } from "@/lib/discord";
+import { MEMBER_STATUS, SITE_URL, formatCoins } from "@/lib/constants";
 
 type DiscordEmbed = {
   title?: string;
@@ -59,10 +60,10 @@ type CheckResult = { ok: true; found: number } | { ok: false; error: string };
  * einen Payment-Datensatz an (dedupliziert per Discord-Nachrichten-ID).
  * Ordnet die Zahlung primaer ueber die Kundennummer im Verwendungszweck
  * ("Verleih <Kundennummer>") einem Mitglied zu, fallback auf den
- * Discord-Username des Absenders. WEIST ABER NIE automatisch einen Abo-Plan
- * zu - die Business-Card-Währung (₵) hat eine andere Skala als unsere
- * $-Abo-Preise, das muss Aufsicht/Owner manuell bestaetigen (siehe
- * /dashboard/verwaltung/zahlungen).
+ * Discord-Username des Absenders, und schreibt sie sofort als Guthaben gut
+ * (siehe creditPaymentCore). WEIST ABER NIE automatisch einen Abo-Plan zu -
+ * das Abbuchen eines Pakets vom Guthaben passiert getrennt ueber
+ * /verlaengern bzw. "Abo zuweisen" in der Verwaltung.
  */
 export async function checkForNewPayments(): Promise<CheckResult> {
   if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
@@ -100,7 +101,7 @@ export async function checkForNewPayments(): Promise<CheckResult> {
       ? await prisma.member.findUnique({ where: { customerNumber: customerNumberMatch[1] } })
       : await prisma.member.findFirst({ where: { username: { equals: parsed.username } } });
 
-    await prisma.payment.create({
+    const payment = await prisma.payment.create({
       data: {
         discordMessageId: message.id,
         amount: parsed.amount,
@@ -119,7 +120,88 @@ export async function checkForNewPayments(): Promise<CheckResult> {
         ? `Zahlung von ${parsed.amount} ₵ von @${parsed.username} erkannt und ${member.displayName} zugeordnet.`
         : `Zahlung von ${parsed.amount} ₵ von @${parsed.username} erkannt - kein passendes Mitglied gefunden.`,
     });
+
+    // Sofort verbuchen - ohne Klick in der Verwaltung.
+    await creditPaymentCore(payment.id, null).catch((err) =>
+      console.error("[zahlungen] Automatisches Verbuchen fehlgeschlagen:", err)
+    );
   }
 
   return { ok: true, found };
+}
+
+export type CreditResult =
+  | { ok: true; outcome: "APPLIED" | "DONATED" | "PENDING" }
+  | { ok: false; error: string };
+
+/**
+ * Verbucht eine erkannte Zahlung. Wird sowohl automatisch (direkt nach dem
+ * Erkennen im Zahlungskanal) als auch manuell aus der Verwaltung aufgerufen -
+ * actorId ist dabei null bzw. die handelnde Person.
+ *
+ * Regel: Guthaben aufladen koennen nur aktive Kunden. Zahlungen von
+ * Mitgliedern ohne aktiven Status zaehlen als Spende und erhoehen kein
+ * Guthaben. Laesst sich die Zahlung keinem Mitglied zuordnen, bleibt sie
+ * offen (PENDING) und wartet auf eine Zuordnung von Hand.
+ */
+export async function creditPaymentCore(
+  paymentId: string,
+  actorId: string | null
+): Promise<CreditResult> {
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: { member: true },
+  });
+  if (!payment) return { ok: false, error: "Zahlung nicht gefunden." };
+  if (payment.status !== "PENDING") return { ok: false, error: "Zahlung wurde bereits verbucht." };
+
+  // Ohne zugeordnetes Mitglied bleibt die Zahlung offen - dann entscheidet
+  // die Verwaltung von Hand, zu wem sie gehoert.
+  if (!payment.memberId || !payment.member) return { ok: true, outcome: "PENDING" };
+
+  if (payment.member.status !== MEMBER_STATUS.ACTIVE) {
+    await prisma.payment.update({ where: { id: paymentId }, data: { status: "DONATED" } });
+    await logAction({
+      actorId,
+      targetId: payment.memberId,
+      action: "PAYMENT_DONATED",
+      details: `Zahlung von ${payment.amount} ₵ (@${payment.discordUsername}) als Spende verbucht - kein aktiver Kunde.`,
+    });
+    return { ok: true, outcome: "DONATED" };
+  }
+
+  const updated = await prisma.member.update({
+    where: { id: payment.memberId },
+    data: { balance: { increment: payment.amount } },
+  });
+  await prisma.payment.update({ where: { id: paymentId }, data: { status: "APPLIED" } });
+
+  await logAction({
+    actorId,
+    targetId: payment.memberId,
+    action: "PAYMENT_CREDITED",
+    details: `Zahlung von ${payment.amount} ₵ (@${payment.discordUsername}) als Guthaben gutgeschrieben.`,
+  });
+
+  await sendDiscordDirectMessage(payment.member.discordId, {
+    embeds: [
+      {
+        title: "💳 Guthaben aufgeladen",
+        description:
+          `Deine Zahlung ist angekommen und wurde deinem Konto gutgeschrieben.
+
+` +
+          `**Gutgeschrieben:** ${formatCoins(payment.amount)}
+` +
+          `**Neues Guthaben:** ${formatCoins(updated.balance)}
+
+` +
+          `Mit \`/verlaengern\` schließt du dein Abo direkt vom Guthaben ab — auch mit einem anderen Tarif. ` +
+          `Deinen Stand siehst du jederzeit mit \`/guthaben\` oder auf ${SITE_URL}/dashboard/abo.`,
+        color: 0x2f8f5b,
+      },
+    ],
+  }).catch(() => {});
+
+  return { ok: true, outcome: "APPLIED" };
 }

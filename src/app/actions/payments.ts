@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { checkForNewPayments } from "@/lib/payments";
-import { MEMBER_STATUS, ROLES } from "@/lib/constants";
+import { checkForNewPayments, creditPaymentCore } from "@/lib/payments";
+import { ROLES } from "@/lib/constants";
 
 function refreshPaymentPages() {
   revalidatePath("/dashboard/verwaltung/zahlungen");
@@ -27,50 +27,14 @@ export async function checkPayments() {
 }
 
 /**
- * Schreibt eine erkannte Zahlung als Guthaben auf dem Konto des zugeordneten
- * Mitglieds gut - 1 ₵ = 1 $ (direkt vergleichbar). Ordnet NICHT direkt einem
- * Abo-Paket zu; das Abbuchen eines Pakets vom Guthaben passiert separat
- * (setSubscriptionPlanCore, z.B. ueber "Abo zuweisen/verlängern" auf der
- * Akte-Seite). Guthaben wird nie zurücküberwiesen, bleibt also dauerhaft
- * hinterlegt bis es abgebucht wird oder das Mitglied gebannt wird.
- *
- * Guthaben aufladen koennen nur aktive Kunden (status ACTIVE). Zahlungen von
- * Mitgliedern ohne aktiven Status (Freigabe entzogen/ausgeschlossen) zaehlen
- * stattdessen als Spende und erhoehen kein Guthaben.
+ * Verbucht eine erkannte Zahlung von Hand. Normalerweise passiert das
+ * automatisch, sobald die Zahlung im Zahlungskanal auftaucht - dieser Weg
+ * bleibt fuer Zahlungen, die sich nicht automatisch zuordnen liessen und
+ * denen in der Verwaltung erst ein Mitglied zugewiesen wurde.
  */
 export async function creditPaymentToBalance(paymentId: string) {
   const actor = await requireMember(ROLES.AUFSICHT);
-  const payment = await prisma.payment.findUnique({
-    where: { id: paymentId },
-    include: { member: true },
-  });
-  if (!payment || payment.status !== "PENDING" || !payment.memberId || !payment.member) return;
-
-  if (payment.member.status === MEMBER_STATUS.ACTIVE) {
-    await prisma.member.update({
-      where: { id: payment.memberId },
-      data: { balance: { increment: payment.amount } },
-    });
-
-    await prisma.payment.update({ where: { id: paymentId }, data: { status: "APPLIED" } });
-
-    await logAction({
-      actorId: actor.id,
-      targetId: payment.memberId,
-      action: "PAYMENT_CREDITED",
-      details: `Zahlung von ${payment.amount} ₵ (@${payment.discordUsername}) als Guthaben gutgeschrieben.`,
-    });
-  } else {
-    await prisma.payment.update({ where: { id: paymentId }, data: { status: "DONATED" } });
-
-    await logAction({
-      actorId: actor.id,
-      targetId: payment.memberId,
-      action: "PAYMENT_DONATED",
-      details: `Zahlung von ${payment.amount} ₵ (@${payment.discordUsername}) als Spende verbucht - kein aktiver Kunde.`,
-    });
-  }
-
+  await creditPaymentCore(paymentId, actor.id);
   refreshPaymentPages();
 }
 

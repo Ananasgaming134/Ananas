@@ -8,6 +8,7 @@ import { syncCategoryChannels } from "@/lib/discordPanel";
 import { processLoanReminders } from "@/lib/loanReminders";
 import { postSubscriptionReminders } from "@/lib/subscriptions";
 import { syncMinecraftNames } from "@/lib/verification";
+import { checkForNewPayments } from "@/lib/payments";
 
 /**
  * Wird per System-Crontab auf dem Server jede Minute aufgerufen (siehe
@@ -46,6 +47,12 @@ export async function GET(request: Request) {
 
   // Benachrichtigungen: Zwischen-Erinnerung zur Abo-Frist, Ablauf-Hinweis
   // einen Tag vorher und das Auslaufen befristeter Sperren.
+  // Eingehende Business-Card-Zahlungen erkennen und sofort als Guthaben
+  // gutschreiben. Laeuft minuetlich als Netz fuer den Fall, dass die
+  // Gateway-Verbindung eine Nachricht verpasst hat (dedupliziert ueber die
+  // Discord-Nachrichten-ID, doppelt verbucht wird also nichts).
+  const payments = await checkForNewPayments().catch((err) => ({ ok: false, error: String(err) }));
+
   const graceReminders = await sendGraceReminders().catch((err) => ({ error: String(err) }));
   const expiryNotices = await sendExpiryNotices().catch((err) => ({ error: String(err) }));
   const blacklistExpiry = await expireBlacklistEntries().catch((err) => ({ error: String(err) }));
@@ -69,6 +76,7 @@ export async function GET(request: Request) {
     ...result,
     access,
     ticketAutoClose,
+    payments,
     graceReminders,
     expiryNotices,
     blacklistExpiry,
