@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { createPartner, updatePartner, type FormState } from "@/app/actions/partners";
 
 const initialState: FormState = null;
@@ -19,6 +19,9 @@ type Partner = {
 const feldClass =
   "w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm outline-none ring-accent/40 focus:ring-2";
 
+const MAX_MB = 5;
+const ERLAUBT = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
 /**
  * Formular fuer eine Visitenkarte. Wird zweimal verwendet: einmal leer zum
  * Anlegen, einmal je bestehendem Eintrag zum Bearbeiten. Bilder werden direkt
@@ -31,6 +34,29 @@ export default function PartnerForm({ partner }: { partner?: Partner }) {
     bearbeiten ? updatePartner : createPartner,
     initialState
   );
+
+  // Sofortige Rueckmeldung schon beim Auswaehlen der Datei - wer ein zu
+  // grosses Bild nimmt, soll das nicht erst nach dem Absenden erfahren.
+  const [bildFehler, setBildFehler] = useState<Record<string, string>>({});
+
+  function pruefeDatei(feld: string, label: string, datei: File | null) {
+    let meldung = "";
+    if (datei) {
+      if (!ERLAUBT.includes(datei.type)) {
+        meldung = `${label}: Dieses Format geht nicht. Nimm PNG, JPG, WEBP oder GIF.`;
+      } else if (datei.size > MAX_MB * 1024 * 1024) {
+        meldung = `${label}: Das Bild ist ${(datei.size / 1024 / 1024).toFixed(1)} MB groß — erlaubt sind ${MAX_MB} MB.`;
+      }
+    }
+    setBildFehler((alt) => {
+      const neu = { ...alt };
+      if (meldung) neu[feld] = meldung;
+      else delete neu[feld];
+      return neu;
+    });
+  }
+
+  const fehlerListe = Object.values(bildFehler);
 
   return (
     <form action={formAction} className="space-y-4">
@@ -60,12 +86,12 @@ export default function PartnerForm({ partner }: { partner?: Partner }) {
       </div>
 
       <label className="block">
-        <span className="mb-1 block text-xs font-medium text-muted">Beschreibung</span>
+        <span className="mb-1 block text-xs font-medium text-muted">Text unter dem Namen</span>
         <textarea
           name="description"
           rows={3}
           defaultValue={partner?.description ?? ""}
-          placeholder="Kurz beschreiben, worum es bei dieser Kooperation geht."
+          placeholder="Steht auf der Karte direkt unter dem Namen — ein Satz reicht."
           className={feldClass}
         />
       </label>
@@ -76,6 +102,8 @@ export default function PartnerForm({ partner }: { partner?: Partner }) {
           name="banner"
           entfernenName="bannerEntfernen"
           vorhanden={partner?.bannerUrl ?? null}
+          fehler={bildFehler.banner}
+          onDatei={(datei) => pruefeDatei("banner", "Banner", datei)}
           breit
         />
         <BildFeld
@@ -83,6 +111,8 @@ export default function PartnerForm({ partner }: { partner?: Partner }) {
           name="avatar"
           entfernenName="avatarEntfernen"
           vorhanden={partner?.avatarUrl ?? null}
+          fehler={bildFehler.avatar}
+          onDatei={(datei) => pruefeDatei("avatar", "Profilbild", datei)}
         />
       </div>
 
@@ -108,13 +138,18 @@ export default function PartnerForm({ partner }: { partner?: Partner }) {
 
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending || fehlerListe.length > 0}
           className="ml-auto rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {pending ? "Wird gespeichert..." : bearbeiten ? "Änderungen speichern" : "Kooperation anlegen"}
         </button>
       </div>
 
+      {fehlerListe.map((meldung) => (
+        <p key={meldung} className="text-xs text-danger">
+          ❌ {meldung}
+        </p>
+      ))}
       {state?.error && <p className="text-xs text-danger">❌ {state.error}</p>}
       {state?.ok && <p className="text-xs text-accent-2">✅ Gespeichert.</p>}
     </form>
@@ -126,12 +161,16 @@ function BildFeld({
   name,
   entfernenName,
   vorhanden,
+  fehler,
+  onDatei,
   breit,
 }: {
   label: string;
   name: string;
   entfernenName: string;
   vorhanden: string | null;
+  fehler?: string;
+  onDatei: (datei: File | null) => void;
   breit?: boolean;
 }) {
   return (
@@ -159,9 +198,14 @@ function BildFeld({
         type="file"
         name={name}
         accept="image/png,image/jpeg,image/webp,image/gif"
-        className="w-full text-xs text-muted file:mr-3 file:rounded-lg file:border file:border-border file:bg-surface-2 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground hover:file:bg-surface"
+        onChange={(e) => onDatei(e.target.files?.[0] ?? null)}
+        className={`w-full text-xs text-muted file:mr-3 file:rounded-lg file:border file:bg-surface-2 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground hover:file:bg-surface ${
+          fehler ? "file:border-danger" : "file:border-border"
+        }`}
       />
-      <p className="mt-1 text-[11px] text-muted">PNG, JPG, WEBP oder GIF, höchstens 5 MB.</p>
+      <p className={`mt-1 text-[11px] ${fehler ? "text-danger" : "text-muted"}`}>
+        {fehler ?? "PNG, JPG, WEBP oder GIF, höchstens 5 MB."}
+      </p>
     </div>
   );
 }

@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { deleteUploadedImageIfLocal, saveUploadedImage } from "@/lib/uploads";
+import {
+  ALLOWED_IMAGE_TYPES,
+  MAX_IMAGE_BYTES,
+  deleteUploadedImageIfLocal,
+  saveUploadedImage,
+} from "@/lib/uploads";
 
 export type PartnerResult = { ok: true } | { ok: false; error: string };
 
@@ -31,6 +36,23 @@ function pruefeLink(url: string | null): { ok: true; url: string | null } | { ok
   return { ok: true, url: trimmed };
 }
 
+/**
+ * Prueft eine ausgewaehlte Datei, bevor gespeichert wird. Frueher wurde eine
+ * unbrauchbare Datei stillschweigend verworfen und die Karte ohne Bild
+ * angelegt - man sah dann nicht, warum das Bild fehlt.
+ */
+function pruefeBild(file: File | null, feld: string): { ok: true } | { ok: false; error: string } {
+  if (!file || file.size === 0) return { ok: true };
+  if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+    return { ok: false, error: `${feld}: Dieses Dateiformat geht nicht. Erlaubt sind PNG, JPG, WEBP und GIF.` };
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    const mb = (file.size / 1024 / 1024).toFixed(1);
+    return { ok: false, error: `${feld}: Das Bild ist ${mb} MB groß, erlaubt sind höchstens 5 MB.` };
+  }
+  return { ok: true };
+}
+
 /** Alle sichtbaren Partner fuer die Startseite, in der eingestellten Reihenfolge. */
 export async function getPublicPartners() {
   return prisma.partner.findMany({
@@ -44,6 +66,11 @@ export async function createPartnerCore(input: PartnerInput, actorId: string): P
 
   const link = pruefeLink(input.discordUrl);
   if (!link.ok) return link;
+
+  const bannerCheck = pruefeBild(input.banner, "Banner");
+  if (!bannerCheck.ok) return bannerCheck;
+  const avatarCheck = pruefeBild(input.avatar, "Profilbild");
+  if (!avatarCheck.ok) return avatarCheck;
 
   const [bannerUrl, avatarUrl] = await Promise.all([
     saveUploadedImage(input.banner),
@@ -82,6 +109,11 @@ export async function updatePartnerCore(
 
   const link = pruefeLink(input.discordUrl);
   if (!link.ok) return link;
+
+  const bannerCheck = pruefeBild(input.banner, "Banner");
+  if (!bannerCheck.ok) return bannerCheck;
+  const avatarCheck = pruefeBild(input.avatar, "Profilbild");
+  if (!avatarCheck.ok) return avatarCheck;
 
   const [neuerBanner, neuerAvatar] = await Promise.all([
     saveUploadedImage(input.banner),

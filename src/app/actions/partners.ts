@@ -37,17 +37,29 @@ function readPartner(formData: FormData): PartnerInput {
 
 export async function createPartner(_prev: FormState, formData: FormData): Promise<FormState> {
   const actor = await requireMember(ROLES.OWNER);
-  const result = await createPartnerCore(readPartner(formData), actor.id);
-  refresh();
-  return result.ok ? { ok: true } : { error: result.error };
+  try {
+    const result = await createPartnerCore(readPartner(formData), actor.id);
+    refresh();
+    return result.ok ? { ok: true } : { error: result.error };
+  } catch (err) {
+    // Ohne dieses Netz bliebe das Formular bei einem unerwarteten Fehler
+    // einfach stumm stehen.
+    console.error("[kooperationen] Anlegen fehlgeschlagen:", err);
+    return { error: "Das hat nicht geklappt. Versuch es noch einmal — bleibt es dabei, steht der Grund in den Logs." };
+  }
 }
 
 export async function updatePartner(_prev: FormState, formData: FormData): Promise<FormState> {
   const actor = await requireMember(ROLES.OWNER);
   const id = String(formData.get("id") ?? "");
-  const result = await updatePartnerCore(id, readPartner(formData), actor.id);
-  refresh();
-  return result.ok ? { ok: true } : { error: result.error };
+  try {
+    const result = await updatePartnerCore(id, readPartner(formData), actor.id);
+    refresh();
+    return result.ok ? { ok: true } : { error: result.error };
+  } catch (err) {
+    console.error("[kooperationen] Speichern fehlgeschlagen:", err);
+    return { error: "Das hat nicht geklappt. Versuch es noch einmal — bleibt es dabei, steht der Grund in den Logs." };
+  }
 }
 
 export async function deletePartner(id: string) {
