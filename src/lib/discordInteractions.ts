@@ -26,6 +26,8 @@ export const NO_CATEGORY_VALUE = "__none";
 // Ergebnis kommt als eigenes (ggf. seitenweises) Select - unabhaengig von
 // der Kategorie-Auswahl, sucht immer ueber alle Items.
 export const PANEL_SEARCH_BUTTON_ID = "leihcenter_search_open";
+/** Zeigt dem Klickenden seine eigenen Ausleihen mit Rueckgabe-Buttons. */
+export const MY_LOANS_BUTTON_ID = "leihcenter_my_loans";
 export const ITEM_SEARCH_MODAL_ID = "leihcenter_search_modal";
 export const ITEM_SEARCH_SELECT_ID = "leihcenter_search_select";
 /** custom_id-Format: `${ITEM_SEARCH_PAGE_PREFIX}${page}:${query}` - Seitenwechsel innerhalb der Suchergebnisse. */

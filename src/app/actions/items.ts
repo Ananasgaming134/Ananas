@@ -8,7 +8,7 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { fetchPriceSourceItems, searchPriceSourceItems } from "@/lib/priceSource";
-import { refreshPanelsQuietly } from "@/lib/discordPanel";
+import { refreshPanelsQuietly, syncCategoryChannelsQuietly } from "@/lib/discordPanel";
 import { PRICE_STATUS, ROLES } from "@/lib/constants";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -160,6 +160,7 @@ export async function createItem(formData: FormData) {
 
   refreshItemPages();
   await refreshPanelsQuietly();
+  await syncCategoryChannelsQuietly();
   redirect("/dashboard/verwaltung/items");
 }
 
@@ -210,6 +211,7 @@ export async function updateItem(itemId: string, formData: FormData) {
 
   refreshItemPages();
   await refreshPanelsQuietly();
+  await syncCategoryChannelsQuietly();
   redirect("/dashboard/verwaltung/items");
 }
 
@@ -229,6 +231,7 @@ export async function deleteItem(itemId: string) {
 
   refreshItemPages();
   await refreshPanelsQuietly();
+  await syncCategoryChannelsQuietly();
 }
 
 export async function reportPriceUnavailable(itemId: string) {
@@ -329,6 +332,7 @@ export async function refreshItemPrices() {
 
   refreshItemPages();
   await refreshPanelsQuietly();
+  await syncCategoryChannelsQuietly();
 }
 
 /**
@@ -361,6 +365,7 @@ export async function toggleItemAvailability(itemId: string, formData: FormData)
   });
 
   await refreshPanelsQuietly();
+  await syncCategoryChannelsQuietly();
   revalidatePath("/dashboard/items");
   revalidatePath("/dashboard/verwaltung/items");
 }

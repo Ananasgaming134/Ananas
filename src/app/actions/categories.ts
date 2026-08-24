@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
+import {
+  deleteCategoryChannel,
+  renameCategoryChannel,
+  syncCategoryChannelsQuietly,
+} from "@/lib/discordPanel";
 import { ROLES } from "@/lib/constants";
 
 function refreshCategoryPages() {
@@ -28,6 +33,8 @@ export async function createCategory(formData: FormData) {
     details: `Kategorie "${category.name}" angelegt.`,
   });
 
+  // Legt den zugehoerigen Discord-Textkanal samt Panel an.
+  await syncCategoryChannelsQuietly();
   refreshCategoryPages();
 }
 
@@ -46,6 +53,9 @@ export async function renameCategory(categoryId: string, formData: FormData) {
     details: `Kategorie "${existing.name}" umbenannt zu "${name}".`,
   });
 
+  // Kanal mit umbenennen und das Panel darin aktualisieren.
+  await renameCategoryChannel(categoryId, name).catch(() => {});
+  await syncCategoryChannelsQuietly();
   refreshCategoryPages();
 }
 
@@ -55,6 +65,8 @@ export async function deleteCategory(categoryId: string) {
   const existing = await prisma.category.findUnique({ where: { id: categoryId } });
   if (!existing) return;
 
+  // Kanal VOR dem Loeschen entfernen - danach ist die gespeicherte ID weg.
+  await deleteCategoryChannel(categoryId).catch(() => {});
   await prisma.category.delete({ where: { id: categoryId } });
   await logAction({
     actorId: member.id,
@@ -62,5 +74,6 @@ export async function deleteCategory(categoryId: string) {
     details: `Kategorie "${existing.name}" gelöscht. Zugeordnete Items sind jetzt ohne Kategorie.`,
   });
 
+  await syncCategoryChannelsQuietly();
   refreshCategoryPages();
 }

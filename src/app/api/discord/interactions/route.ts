@@ -9,6 +9,7 @@ import {
   postOrUpdatePanel,
   postOrUpdateTicketPanel,
   refreshPanelsQuietly,
+  syncCategoryChannelsQuietly,
 } from "@/lib/discordPanel";
 import { RENEW_PREFIX, renewOwnSubscriptionCore, setSubscriptionPlanCore } from "@/lib/subscriptions";
 import { applyAndOpenTicketCore } from "@/lib/applications";
@@ -44,6 +45,7 @@ import {
   ITEM_SEARCH_MODAL_ID,
   ITEM_SEARCH_PAGE_PREFIX,
   ITEM_SEARCH_SELECT_ID,
+  MY_LOANS_BUTTON_ID,
   PANEL_CATEGORY_SELECT_ID,
   PANEL_SEARCH_BUTTON_ID,
   PANEL_SELECT_ID,
@@ -474,6 +476,10 @@ async function handleComponent(interaction: DiscordInteractionPayload) {
       type: InteractionResponseType.UPDATE_MESSAGE,
       data: { ...payload, flags: EPHEMERAL },
     });
+  }
+
+  if (customId === MY_LOANS_BUTTON_ID) {
+    return handleMeineAusleihenCommand(discordUser);
   }
 
   if (customId === PANEL_SEARCH_BUTTON_ID) {
@@ -1406,6 +1412,7 @@ async function handleBorrow(
 
   const result = await borrowItemCore(itemId, member.id, LOAN_CHANNEL.DISCORD);
   await refreshPanelsQuietly();
+  await syncCategoryChannelsQuietly();
 
   return ephemeral(
     result.ok ? "✅ Item ausgeliehen. Viel Spaß!" : `❌ ${result.error}`
@@ -1466,6 +1473,7 @@ async function handleReturn(loanId: string, discordUser: DiscordInteractionUser)
 
   const result = await returnLoanCore(loanId, member.id);
   await refreshPanelsQuietly();
+  await syncCategoryChannelsQuietly();
 
   if (!result.ok) return ephemeral(`❌ ${result.error}`);
 
@@ -1621,6 +1629,7 @@ async function handleForceReturn(
   const actor = await ensureMemberFromDiscordUser(discordUser);
   const result = await returnLoanCore(loanId, actor.id, { allowForeign: true });
   await refreshPanelsQuietly();
+  await syncCategoryChannelsQuietly();
 
   if (!result.ok) return ephemeral(`❌ ${result.error}`);
   return ephemeral(`✅ **${result.itemName}** wurde für das Mitglied ausgebucht.`);

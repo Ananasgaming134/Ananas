@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { DISCORD_BOT_TOKEN } from "@/lib/discord";
+import {
+  DISCORD_BOT_TOKEN,
+  ITEM_CATEGORY_PARENT_ID,
+  createCategoryChannel,
+  deleteChannel,
+  renameChannel,
+  roleIdsFromEnv,
+} from "@/lib/discord";
 import { LOAN_STATUS, SITE_NAME } from "@/lib/constants";
 import {
   CATEGORY_ITEM_SELECT_ID,
@@ -8,6 +15,7 @@ import {
   ITEM_SEARCH_PAGE_PREFIX,
   ITEM_SEARCH_SELECT_ID,
   NO_CATEGORY_VALUE,
+  MY_LOANS_BUTTON_ID,
   PANEL_SEARCH_BUTTON_ID,
   TICKET_OPEN_SUPPORT_ID,
   TICKET_OPEN_VERLEIH_ID,
@@ -810,5 +818,213 @@ export async function refreshPanelsQuietly(): Promise<void> {
     await refreshAllPanels();
   } catch (err) {
     console.error("[discordPanel] Panel-Aktualisierung fehlgeschlagen:", err);
+  }
+}
+
+/**
+ * Baut das Panel fuer EINE Kategorie - so wie im grossen Ausleih-Kanal, aber
+ * nur mit den Items dieser Kategorie. Wird in den eigenen Textkanal der
+ * Kategorie gepostet. Bei mehr als 25 Items entstehen mehrere Nachrichten,
+ * damit jedes Item direkt auswaehlbar bleibt.
+ */
+async function buildCategoryChannelMessages(
+  category: PanelCategory
+): Promise<Record<string, unknown>[]> {
+  const pages: PanelItem[][] = [];
+  for (let i = 0; i < category.items.length; i += MAX_SELECT_OPTIONS) {
+    pages.push(category.items.slice(i, i + MAX_SELECT_OPTIONS));
+  }
+  if (pages.length === 0) pages.push([]);
+
+  const free = category.items.reduce((sum, i) => sum + i.free, 0);
+  const total = category.items.reduce((sum, i) => sum + i.quantityTotal, 0);
+  const emoji = categoryEmoji(category.label);
+
+  return pages.map((pageItems, pageIndex) => {
+    const lines = pageItems.map((item) => {
+      const head = `**${item.name}**`;
+      if (item.unavailable) return `⛔ ${head}\n \`gesperrt\` derzeit nicht ausleihbar`;
+      const bar = availabilityBar(item.free, item.quantityTotal);
+      return `${availabilityIcon(item.free, item.quantityTotal)} ${head}\n \`${bar}\` ${item.free}/${item.quantityTotal} frei`;
+    });
+
+    const isFirst = pageIndex === 0;
+    const components: unknown[] = [];
+
+    if (pageItems.length > 0) {
+      components.push({
+        type: 1,
+        components: [
+          {
+            type: 3,
+            custom_id: CATEGORY_ITEM_SELECT_ID,
+            placeholder: `${category.label} — Item auswählen…`.slice(0, 150),
+            options: pageItems.map((item) => ({
+              label: `${item.unavailable ? "⛔" : availabilityIcon(item.free, item.quantityTotal)} ${item.name}`.slice(0, 100),
+              value: item.id,
+              description: (item.unavailable
+                ? "derzeit nicht ausleihbar"
+                : `${item.free} von ${item.quantityTotal} frei`
+              ).slice(0, 100),
+            })),
+          },
+        ],
+      });
+    }
+
+    // Nur unter der ersten Nachricht: Rueckgabe-Knopf fuer die eigenen
+    // Ausleihen - die Antwort darauf sieht nur die klickende Person.
+    if (isFirst) {
+      components.push({
+        type: 1,
+        components: [
+          { type: 2, style: 2, label: "🔄 Meine Ausleihen / Zurückgeben", custom_id: MY_LOANS_BUTTON_ID },
+          { type: 2, style: 2, label: "🔍 Item suchen", custom_id: PANEL_SEARCH_BUTTON_ID },
+        ],
+      });
+    }
+
+    const intro = isFirst
+      ? `**${free}** von **${total}** Stück verfügbar\n🟢 frei · 🟡 knapp · 🔴 verliehen · ⛔ gesperrt\n\n`
+      : "";
+
+    return {
+      embeds: [
+        {
+          title:
+            pages.length > 1
+              ? `${emoji}  ${category.label}  ·  Teil ${pageIndex + 1}/${pages.length}`
+              : `${emoji}  ${category.label}`,
+          description:
+            lines.length > 0
+              ? intro + lines.join("\n")
+              : "In dieser Kategorie sind aktuell keine Items hinterlegt.",
+          color: free > 0 ? 0xf2b544 : 0xf2545b,
+          footer: {
+            text: `${category.items.length} Item-Art(en) · Auswählen zum Ausleihen oder Zurückgeben`,
+          },
+        },
+      ],
+      components,
+    };
+  });
+}
+
+export type CategorySyncResult = {
+  created: number;
+  updated: number;
+  deleted: number;
+  errors: string[];
+};
+
+/**
+ * Haelt die Kategorie-Kanaele mit der Datenbank im Gleichklang:
+ *
+ * - neue Kategorie -> Textkanal anlegen und Panel posten
+ * - sonst -> nur die Panel-Nachrichten aktualisieren
+ *
+ * Umbenennen und Loeschen laufen ueber renameCategoryChannel bzw.
+ * deleteCategoryChannel direkt aus den Kategorie-Aktionen heraus.
+ *
+ * Wir arbeiten immer ueber die gespeicherte Kanal-ID - wird der Kanal in
+ * Discord von Hand umbenannt, stoert das nichts.
+ */
+export async function syncCategoryChannels(): Promise<CategorySyncResult> {
+  const result: CategorySyncResult = { created: 0, updated: 0, deleted: 0, errors: [] };
+  if (!DISCORD_BOT_TOKEN || !ITEM_CATEGORY_PARENT_ID) return result;
+
+  const deployment = await prisma.botDeployment.findFirst({ where: { active: true } });
+  if (!deployment) return result;
+
+  const kundeRoleIds = roleIdsFromEnv("DISCORD_ROLE_KUNDE");
+  const { categories } = await loadPanelCategories();
+  const dbCategories = await prisma.category.findMany({ orderBy: { name: "asc" } });
+
+  // Kategorien ohne Items tauchen in loadPanelCategories nicht auf, bekommen
+  // aber trotzdem einen Kanal - mit leerem Panel.
+  const liveByKey = new Map(categories.map((c) => [c.key, c]));
+
+  for (const dbCategory of dbCategories) {
+    const live: PanelCategory = liveByKey.get(dbCategory.id) ?? {
+      key: dbCategory.id,
+      label: dbCategory.name,
+      items: [],
+    };
+
+    let channelId = dbCategory.discordChannelId;
+
+    if (!channelId) {
+      const created = await createCategoryChannel(
+        deployment.guildId,
+        ITEM_CATEGORY_PARENT_ID,
+        dbCategory.name,
+        kundeRoleIds
+      );
+      if (!created.ok) {
+        result.errors.push(`${dbCategory.name}: ${created.error}`);
+        continue;
+      }
+      channelId = created.channelId;
+      await prisma.category.update({
+        where: { id: dbCategory.id },
+        data: { discordChannelId: channelId, panelMessageIds: null },
+      });
+      result.created += 1;
+      await sleep(500);
+    }
+
+    const payloads = await buildCategoryChannelMessages(live);
+    const oldIds = (dbCategory.panelMessageIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const newIds: string[] = [];
+
+    for (let i = 0; i < payloads.length; i++) {
+      const existingId = oldIds[i] ?? null;
+      const posted = await postOrUpdateMessage(channelId, existingId, payloads[i]);
+      if (!posted.ok) {
+        result.errors.push(`${dbCategory.name}: ${posted.error}`);
+        break;
+      }
+      newIds.push(posted.messageId);
+      await sleep(350);
+    }
+
+    // Kategorie geschrumpft -> ueberzaehlige Nachrichten entfernen.
+    for (const stale of oldIds.slice(payloads.length)) {
+      await deleteMessage(channelId, stale);
+    }
+
+    if (newIds.join(",") !== oldIds.join(",")) {
+      await prisma.category.update({
+        where: { id: dbCategory.id },
+        data: { panelMessageIds: newIds.join(",") },
+      });
+      result.updated += 1;
+    }
+  }
+
+  return result;
+}
+
+/** Benennt den Kanal einer Kategorie um - beim Umbenennen der Kategorie. */
+export async function renameCategoryChannel(categoryId: string, newName: string): Promise<void> {
+  const category = await prisma.category.findUnique({ where: { id: categoryId } });
+  if (!category?.discordChannelId) return;
+  await renameChannel(category.discordChannelId, newName).catch(() => {});
+}
+
+/** Loescht den Kanal einer Kategorie - beim Entfernen der Kategorie. */
+export async function deleteCategoryChannel(categoryId: string): Promise<void> {
+  const category = await prisma.category.findUnique({ where: { id: categoryId } });
+  if (!category?.discordChannelId) return;
+  await deleteChannel(category.discordChannelId).catch(() => {});
+}
+
+/** Wie syncCategoryChannels(), schluckt aber Fehler - fuer Web-Aktionen. */
+export async function syncCategoryChannelsQuietly(): Promise<void> {
+  try {
+    const r = await syncCategoryChannels();
+    if (r.errors.length > 0) console.error("[categoryChannels]", r.errors.join(" | "));
+  } catch (err) {
+    console.error("[categoryChannels] Abgleich fehlgeschlagen:", err);
   }
 }

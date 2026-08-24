@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireMember } from "@/lib/session";
 import { borrowItemCore, returnLoanCore } from "@/lib/loans";
-import { refreshPanelsQuietly } from "@/lib/discordPanel";
+import { refreshPanelsQuietly, syncCategoryChannelsQuietly } from "@/lib/discordPanel";
 import { LOAN_CHANNEL, ROLES } from "@/lib/constants";
 
 function refreshItemPages() {
@@ -18,14 +18,20 @@ export async function borrowItem(itemId: string) {
   const member = await requireMember();
   const result = await borrowItemCore(itemId, member.id, LOAN_CHANNEL.WEB);
   refreshItemPages();
-  if (result.ok) await refreshPanelsQuietly();
+  if (result.ok) {
+    await refreshPanelsQuietly();
+    await syncCategoryChannelsQuietly();
+  }
 }
 
 export async function returnLoan(loanId: string) {
   const member = await requireMember();
   const result = await returnLoanCore(loanId, member.id);
   refreshItemPages();
-  if (result.ok) await refreshPanelsQuietly();
+  if (result.ok) {
+    await refreshPanelsQuietly();
+    await syncCategoryChannelsQuietly();
+  }
 }
 
 /**
@@ -36,5 +42,8 @@ export async function forceReturnLoan(loanId: string) {
   const actor = await requireMember(ROLES.AUFSICHT);
   const result = await returnLoanCore(loanId, actor.id, { allowForeign: true });
   refreshItemPages();
-  if (result.ok) await refreshPanelsQuietly();
+  if (result.ok) {
+    await refreshPanelsQuietly();
+    await syncCategoryChannelsQuietly();
+  }
 }

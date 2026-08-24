@@ -26,6 +26,13 @@ export const TICKET_PANEL_CHANNEL_ID =
 export const TICKET_CLAIM_CHANNEL_ID =
   process.env.DISCORD_TICKET_CLAIM_CHANNEL_ID ?? "1540827374357057586";
 
+/**
+ * Discord-Kanal-Kategorie, unter der pro Item-Kategorie ein eigener
+ * Textkanal mit dem passenden Ausleih-Panel entsteht.
+ */
+export const ITEM_CATEGORY_PARENT_ID =
+  process.env.DISCORD_ITEM_CATEGORY_PARENT_ID ?? "1469713545225703607";
+
 /** Kanal, in dem Abo-Start und Ablauf-Erinnerungen gemeldet werden. */
 export const ABO_CHANNEL_ID = process.env.DISCORD_ABO_CHANNEL_ID ?? "1469744413495394531";
 
@@ -181,7 +188,7 @@ export async function checkRoleLive(discordUserId: string): Promise<RoleCheckRes
  */
 export async function sendDiscordDirectMessage(
   discordUserId: string,
-  payload: { content?: string; embeds?: unknown[] }
+  payload: { content?: string; embeds?: unknown[]; components?: unknown[] }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
 
@@ -253,6 +260,78 @@ export async function revokeGuildRole(
   );
   if (res.ok || res.status === 204 || res.status === 404) return { ok: true };
   return { ok: false, error: `Rolle konnte nicht entzogen werden (${res.status}).` };
+}
+
+/**
+ * Legt einen Textkanal fuer eine Item-Kategorie an. Sichtbarkeit erbt der
+ * Kanal von der uebergeordneten Kanal-Kategorie (Discord-Standard), damit die
+ * Rechte zentral dort gepflegt werden koennen - zusaetzlich wird die
+ * Kunde-Rolle explizit freigeschaltet, falls @everyone dort gesperrt ist.
+ */
+export async function createCategoryChannel(
+  guildId: string,
+  parentId: string,
+  name: string,
+  visibleRoleIds: string[]
+): Promise<{ ok: true; channelId: string } | { ok: false; error: string }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
+
+  const overwrites = visibleRoleIds.map((roleId) => ({
+    id: roleId,
+    type: 0, // ROLE
+    allow: String((1 << 10) | (1 << 16)), // Kanal sehen + Verlauf lesen
+  }));
+
+  const res = await fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: discordChannelName(name),
+      type: 0,
+      parent_id: parentId,
+      permission_overwrites: overwrites.length > 0 ? overwrites : undefined,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    return { ok: false, error: `Kanal konnte nicht erstellt werden (${res.status}): ${text.slice(0, 150)}` };
+  }
+  const channel = (await res.json()) as { id: string };
+  return { ok: true, channelId: channel.id };
+}
+
+/** Discord erlaubt in Kanalnamen nur Kleinbuchstaben, Zahlen und Bindestriche. */
+export function discordChannelName(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 90) || "kategorie"
+  );
+}
+
+/** Benennt einen Kanal um - wird genutzt, wenn eine Kategorie umbenannt wird. */
+export async function renameChannel(channelId: string, name: string): Promise<{ ok: boolean }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false };
+  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: discordChannelName(name) }),
+  }).catch(() => null);
+  return { ok: Boolean(res?.ok) };
+}
+
+/** Loescht einen Kanal - beim Entfernen einer Kategorie. */
+export async function deleteChannel(channelId: string): Promise<{ ok: boolean }> {
+  if (!DISCORD_BOT_TOKEN) return { ok: false };
+  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}` },
+  }).catch(() => null);
+  return { ok: Boolean(res?.ok) };
 }
 
 // Discord-Kanal-/Berechtigungs-Konstanten fuers Ticket-System (siehe

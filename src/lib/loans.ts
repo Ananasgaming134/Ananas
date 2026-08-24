@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
+import { sendDiscordDirectMessage } from "@/lib/discord";
+import { RETURN_PREFIX } from "@/lib/discordInteractions";
 import {
   BORROW_DURATION_MS,
   LOAN_STATUS,
@@ -112,7 +114,41 @@ export async function borrowItemCore(
     details: `"${item.name}" ausgeliehen (Loan ${loan.id}, Kanal ${channel}, Frist 2h)`,
   });
 
+  // Bestaetigung per DM samt Rueckgabe-Knopf - so hat man seine laufenden
+  // Ausleihen und die Frist immer griffbereit, ohne einen Kanal zu suchen.
+  await sendBorrowConfirmationDm(member.discordId, item.name, loan.id, loan.dueAt).catch(() => {});
+
   return { ok: true, loanId: loan.id };
+}
+
+/** DM nach dem Ausleihen: Item, Rueckgabefrist und ein Knopf zum Zurueckgeben. */
+async function sendBorrowConfirmationDm(
+  discordId: string,
+  itemName: string,
+  loanId: string,
+  dueAt: Date | null
+): Promise<void> {
+  const dueLine = dueAt
+    ? `Zurückgeben bis <t:${Math.floor(dueAt.getTime() / 1000)}:t> (<t:${Math.floor(dueAt.getTime() / 1000)}:R>)`
+    : "Bitte zeitnah zurückgeben.";
+
+  await sendDiscordDirectMessage(discordId, {
+    embeds: [
+      {
+        title: "📦 Ausgeliehen",
+        description: `**${itemName}**\n${dueLine}\n\nMit dem Knopf unten gibst du direkt zurück.`,
+        color: 0x3ddc97,
+      },
+    ],
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 3, label: `↩️ ${itemName}`.slice(0, 80), custom_id: `${RETURN_PREFIX}${loanId}` },
+        ],
+      },
+    ],
+  });
 }
 
 export type ReturnResult =

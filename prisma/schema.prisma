@@ -209,6 +209,15 @@ model Category {
   name      String   @unique
   createdAt DateTime @default(now())
 
+  // Eigener Discord-Textkanal pro Kategorie (unter der konfigurierten
+  // Kanal-Kategorie). Dort steht ein Panel nur mit den Items dieser
+  // Kategorie. Die Kanal-ID wird gemerkt, damit ein manuelles Umbenennen in
+  // Discord nichts kaputt macht - wir arbeiten immer ueber die ID.
+  discordChannelId String?
+  // Kommagetrennte Message-IDs des Panels in diesem Kanal (mehrere, falls die
+  // Kategorie mehr als 25 Items hat).
+  panelMessageIds  String?
+
   items     Item[]
 }
 
