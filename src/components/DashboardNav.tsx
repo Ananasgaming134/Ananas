@@ -61,6 +61,7 @@ const VERWALTUNG_GROUPS: NavGroup[] = [
   {
     heading: "Betrieb",
     items: [
+      { href: "/dashboard/verwaltung/ausleihen", label: "Derzeit ausgeliehen", icon: "🔄" },
       { href: "/dashboard/verwaltung/items", label: "Items", icon: "📦", minRole: ROLES.OWNER },
       { href: "/dashboard/verwaltung/zahlungen", label: "Zahlungen", icon: "💰" },
       { href: "/dashboard/verwaltung/logs", label: "Logs", icon: "📜" },

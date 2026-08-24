@@ -40,6 +40,13 @@ export const ABO_CHANNEL_ID = process.env.DISCORD_ABO_CHANNEL_ID ?? "14697444134
 export const RULES_CHANNEL_ID = process.env.DISCORD_RULES_CHANNEL_ID ?? "1469716521965195396";
 
 /** Kanal, in dem Eintraege der roten Liste dokumentiert werden. */
+/**
+ * Kanal fuer ueberzogene Ausleihen - wer seine Frist reissen laesst, taucht
+ * hier fuer die Aufsicht sichtbar auf.
+ */
+export const OVERDUE_CHANNEL_ID =
+  process.env.DISCORD_OVERDUE_CHANNEL_ID ?? "1541538743897563286";
+
 export const BLACKLIST_CHANNEL_ID = process.env.DISCORD_BLACKLIST_CHANNEL_ID ?? "1469743320350851213";
 
 /** Rolle, die Support- UND Verleih-Tickets claimen darf. */

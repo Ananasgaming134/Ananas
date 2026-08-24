@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
+import { resolveOverdueNotice } from "@/lib/overdueChannel";
 import { sendDiscordDirectMessage } from "@/lib/discord";
 import { RETURN_PREFIX } from "@/lib/discordInteractions";
 import {
@@ -190,6 +191,14 @@ export async function returnLoanCore(
     action: "ITEM_RETURNED",
     details: `"${loan.item.name}" zurückgegeben (Loan ${loanId})${isForeign ? " - durch Aufsicht/Owner für das Mitglied ausgebucht" : ""}`,
   });
+
+  // War die Ausleihe ueberzogen, wird die offene Meldung im Ueberzieh-Kanal
+  // abgeschlossen statt stehen zu bleiben.
+  if (loan.overdueMessageId) {
+    await resolveOverdueNotice(loanId, returnedAt).catch((err) =>
+      console.error("[ueberzogen] Abschluss fehlgeschlagen:", err)
+    );
+  }
 
   return {
     ok: true,

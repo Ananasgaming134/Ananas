@@ -153,7 +153,12 @@ export default async function VerwaltungPage() {
       <div className="fade-up card p-5">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold">Aktuell ausgeliehen</h2>
-          <span className="text-xs text-muted">{openLoans.length} aktive Ausleihe(n)</span>
+          <Link
+            href="/dashboard/verwaltung/ausleihen"
+            className="text-xs text-accent hover:underline"
+          >
+            Volle Übersicht ({openLoans.length}) →
+          </Link>
         </div>
         <p className="mb-3 text-xs text-muted">
           Hat jemand ein Item abgegeben, aber vergessen es zurückzugeben? Hier kannst du es für die

@@ -246,6 +246,11 @@ model Loan {
   // (Frist abgelaufen) -> SUSPENDED (mehr als 15 Min. ueberzogen, Sperre verhaengt).
   reminderStage String @default("NONE")
 
+  // Nachricht im Ueberzieh-Kanal. Wird beim Ueberziehen angelegt und danach
+  // nur noch bearbeitet (Sperre verhaengt / zurueckgegeben), statt jedes Mal
+  // eine neue Meldung zu posten.
+  overdueMessageId String?
+
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

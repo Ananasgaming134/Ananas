@@ -61,3 +61,35 @@ export async function getReviewSummary(): Promise<{ average: number; count: numb
 export function renderStars(rating: number): string {
   return "★".repeat(Math.max(0, Math.min(5, rating))) + "☆".repeat(Math.max(0, 5 - rating));
 }
+
+export type PublicReview = {
+  id: string;
+  rating: number;
+  comment: string;
+  displayName: string;
+  avatarUrl: string | null;
+  createdAt: Date;
+};
+
+/**
+ * Bewertungen fuer das Laufband auf der Startseite - nur solche mit
+ * geschriebenem Text, denn eine reine Sternezahl liest sich im Vorbeiziehen
+ * nicht als Empfehlung.
+ */
+export async function getPublicReviews(limit = 24): Promise<PublicReview[]> {
+  const rows = await prisma.review.findMany({
+    where: { NOT: { comment: null }, comment: { not: "" } },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: { member: { select: { displayName: true, avatarUrl: true } } },
+  });
+
+  return rows.map((r) => ({
+    id: r.id,
+    rating: r.rating,
+    comment: r.comment ?? "",
+    displayName: r.member.displayName,
+    avatarUrl: r.member.avatarUrl,
+    createdAt: r.createdAt,
+  }));
+}

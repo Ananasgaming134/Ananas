@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { sendDiscordDirectMessage } from "@/lib/discord";
+import { postOverdueNotice } from "@/lib/overdueChannel";
 import {
   BORROW_SUSPENSION_DURATION_MS,
   LOAN_REMINDER_STAGE,
@@ -91,6 +92,11 @@ export async function processLoanReminders(): Promise<{ remindersSent: number; s
           },
         ],
       });
+      // Bestehende Ueberzieh-Meldung im Kanal auf "gesperrt" hochstufen.
+      await postOverdueNotice(loan.id, "suspended").catch((err) =>
+        console.error("[ueberzogen] Meldung fehlgeschlagen:", err)
+      );
+
       suspensionsApplied++;
       continue;
     }
@@ -121,6 +127,14 @@ export async function processLoanReminders(): Promise<{ remindersSent: number; s
     })();
 
     await sendDiscordDirectMessage(loan.member.discordId, { embeds: [embed] });
+
+    // Sobald eine Frist reisst, sieht das auch die Aufsicht im Kanal.
+    if (target === LOAN_REMINDER_STAGE.OVERDUE) {
+      await postOverdueNotice(loan.id, "overdue").catch((err) =>
+        console.error("[ueberzogen] Meldung fehlgeschlagen:", err)
+      );
+    }
+
     remindersSent++;
   }
 

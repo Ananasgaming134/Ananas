@@ -45,6 +45,7 @@
   --color-muted: var(--muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display), var(--font-geist-sans), sans-serif;
 }
 
 * {
@@ -277,4 +278,403 @@ body {
 }
 .nav-scroll:hover::-webkit-scrollbar-thumb {
   background: var(--muted);
+}
+
+/* ==========================================================================
+   Startseite
+   Eigener Abschnitt, damit das kraeftigere Auftreten der Startseite den
+   ruhigen Kunden-/Verwaltungsbereich nicht anfasst. Alles haengt an .landing.
+   ========================================================================== */
+
+.font-display {
+  font-family: var(--font-display), var(--font-geist-sans), sans-serif;
+  font-stretch: 112%;
+}
+
+.landing {
+  /* Eigener, waermerer Untergrund als im Dashboard - die Startseite soll
+     nach Werkstatt aussehen, nicht nach Aktenschrank. */
+  --landing-ground: #06070b;
+  background:
+    radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
+    var(--landing-ground);
+}
+
+.section-pad {
+  padding-top: 5.5rem;
+  padding-bottom: 5.5rem;
+}
+@media (min-width: 640px) {
+  .section-pad {
+    padding-top: 7rem;
+    padding-bottom: 7rem;
+  }
+}
+
+/* --- Kopfbereich ---------------------------------------------------------- */
+
+/* Legt sich ueber das Blockfeld, damit der Text darauf sicher lesbar bleibt. */
+.hero-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, var(--landing-ground) 8%, color-mix(in srgb, var(--landing-ground) 55%, transparent) 55%, transparent 85%),
+    linear-gradient(to bottom, transparent 40%, var(--landing-ground) 96%);
+}
+
+.badge-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 80%, var(--accent));
+}
+.badge-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--accent-2);
+  animation: badge-ping 2.4s ease-out infinite;
+}
+@keyframes badge-ping {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-2) 55%, transparent); }
+  70% { box-shadow: 0 0 0 0.5rem transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* Die Ueberschrift traegt die Marke: der zweite Teil bekommt einen langsam
+   wandernden Verlauf plus Unterstrich, der beim Laden aufzieht. */
+.headline-accent {
+  position: relative;
+  background: linear-gradient(100deg, var(--accent) 10%, #ffd98a 40%, var(--accent-2) 90%);
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: headline-shift 9s ease-in-out infinite alternate;
+}
+.headline-accent::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.12em;
+  height: 0.09em;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transform-origin: left;
+  animation: underline-grow 1.1s cubic-bezier(0.16, 1, 0.3, 1) 0.45s both;
+}
+@keyframes headline-shift {
+  from { background-position: 0% 0; }
+  to { background-position: 100% 0; }
+}
+@keyframes underline-grow {
+  from { transform: scaleX(0); opacity: 0; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+
+/* --- Bedienelemente ------------------------------------------------------- */
+
+.logo-mark {
+  display: inline-flex;
+  height: 2.25rem;
+  width: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 18%, var(--surface)), var(--surface));
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: var(--accent);
+  box-shadow: 0 0 22px -8px var(--accent);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+}
+.group:hover .logo-mark {
+  transform: rotate(-8deg) scale(1.06);
+  box-shadow: 0 0 26px -6px var(--accent);
+}
+.logo-mark-sm {
+  height: 1.6rem;
+  width: 1.6rem;
+  border-radius: 0.5rem;
+  font-size: 0.6rem;
+}
+
+.nav-pill {
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--muted);
+  transition: color 0.2s ease, background 0.2s ease;
+}
+.nav-pill:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.85rem;
+  background: linear-gradient(135deg, var(--accent), #ffd071);
+  padding: 0.8rem 1.4rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #14100a;
+  box-shadow: 0 10px 32px -12px var(--accent);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.06);
+  box-shadow: 0 16px 40px -14px var(--accent);
+}
+.btn-sm {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  border-radius: 0.7rem;
+}
+.btn-arrow {
+  transition: transform 0.2s ease;
+}
+.btn-primary:hover .btn-arrow {
+  transform: translateX(3px);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  padding: 0.8rem 1.4rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+.btn-ghost:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--surface-2);
+  transform: translateY(-2px);
+}
+
+.link-subtle {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-decoration-color: var(--border);
+  text-underline-offset: 4px;
+  transition: text-decoration-color 0.2s ease;
+}
+.link-subtle:hover {
+  text-decoration-color: var(--accent);
+}
+
+.eyebrow {
+  display: inline-block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* --- Einblenden beim Scrollen -------------------------------------------- */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal-in {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .headline-accent,
+  .headline-accent::after,
+  .badge-dot {
+    animation: none;
+  }
+}
+
+/* --- Karten --------------------------------------------------------------- */
+
+.step-card,
+.feature-card,
+.big-stat,
+.plan-card,
+.team-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.1rem;
+  border: 1px solid var(--border);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--background) 80%, transparent));
+  padding: 1.5rem;
+  transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+}
+.step-card:hover,
+.feature-card:hover,
+.big-stat:hover,
+.plan-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  transform: translateY(-4px);
+  box-shadow: 0 24px 48px -28px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* Die Nummer ist echte Information: die Schritte laufen in dieser Reihenfolge ab. */
+.step-number {
+  position: absolute;
+  top: 0.7rem;
+  right: 1rem;
+  font-family: var(--font-display), sans-serif;
+  font-size: 2.6rem;
+  font-weight: 800;
+  line-height: 1;
+  color: color-mix(in srgb, var(--border) 75%, transparent);
+  transition: color 0.3s ease;
+}
+.step-card:hover .step-number {
+  color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.step-icon,
+.feature-icon {
+  display: flex;
+  height: 2.75rem;
+  width: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 20%, transparent), color-mix(in srgb, var(--accent-2) 12%, transparent));
+  font-size: 1.25rem;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.step-card:hover .step-icon,
+.feature-card:hover .feature-icon {
+  transform: translateY(-3px) rotate(-6deg) scale(1.08);
+}
+
+.big-stat-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+
+.team-card {
+  padding: 1.25rem;
+  text-align: center;
+}
+.team-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  transform: translateY(-4px);
+}
+.team-avatar {
+  height: 4rem;
+  width: 4rem;
+  margin-inline: auto;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.team-card:hover .team-avatar {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 24px -8px var(--accent);
+}
+
+/* --- Pakete --------------------------------------------------------------- */
+
+.plan-card-featured {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 30px 60px -34px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.plan-ribbon {
+  position: absolute;
+  top: 1.1rem;
+  right: 1.1rem;
+  border-radius: 999px;
+  background: var(--accent);
+  padding: 0.2rem 0.6rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #14100a;
+}
+
+/* --- Laufband der Bewertungen -------------------------------------------- */
+
+.marquee {
+  position: relative;
+  overflow: hidden;
+  /* Weiche Kanten links/rechts: die Karten tauchen auf und verschwinden,
+     statt hart abgeschnitten zu werden. */
+  mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+}
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee-run 60s linear infinite;
+}
+.marquee-track-reverse {
+  animation-direction: reverse;
+}
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+@keyframes marquee-run {
+  from { transform: translateX(0); }
+  /* Die Liste steht zweimal hintereinander - bei -50 % beginnt exakt die
+     Wiederholung, der Sprung ist damit unsichtbar. */
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee {
+    overflow-x: auto;
+  }
+  .marquee-track {
+    animation: none;
+  }
+}
+
+/* --- Abschluss ------------------------------------------------------------ */
+
+.cta-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  background:
+    radial-gradient(90% 140% at 100% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 65%),
+    radial-gradient(80% 120% at 0% 100%, color-mix(in srgb, var(--accent-2) 12%, transparent), transparent 60%),
+    color-mix(in srgb, var(--surface) 85%, transparent);
+  padding: 2.75rem;
+}
+@media (min-width: 640px) {
+  .cta-panel {
+    padding: 3.5rem;
+  }
 }
