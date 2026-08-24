@@ -12,7 +12,6 @@ export default async function RegelwerkVerwaltungPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Regelwerk bearbeiten"
         description={
           <>

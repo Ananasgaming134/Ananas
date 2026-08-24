@@ -40,7 +40,6 @@ export default async function RoteListePage({
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Verwaltung"
         title="Rote Liste"
         description="Wer hier steht, kann sich nicht bewerben und kein Verleih-Ticket eröffnen. Support-Tickets bleiben möglich, damit Betroffene sich melden können. Befristete Sperren laufen automatisch aus — die Person bekommt dann eine DM."
       />
