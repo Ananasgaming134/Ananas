@@ -254,12 +254,32 @@ export default async function ItemsPage({
                         <div className="flex items-start justify-between gap-2">
                           <h3 className="text-sm font-semibold">{item.name}</h3>
                           <div className="shrink-0">
-                            <AvailabilityBadge available={available} total={item.quantityTotal} />
+                            {item.unavailable ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-2 py-0.5 text-[11px] font-medium text-danger">
+                                <span className="h-1.5 w-1.5 rounded-full bg-danger" aria-hidden />
+                                gesperrt
+                              </span>
+                            ) : (
+                              <AvailabilityBadge available={available} total={item.quantityTotal} />
+                            )}
                           </div>
                         </div>
 
                         <div className="mt-auto pt-4">
-                          {myLoan ? (
+                          {item.unavailable ? (
+                            <div className="space-y-1">
+                              <button
+                                type="button"
+                                disabled
+                                className="w-full cursor-not-allowed rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
+                              >
+                                Derzeit nicht ausleihbar
+                              </button>
+                              {item.unavailableReason && (
+                                <p className="text-center text-[11px] text-muted">{item.unavailableReason}</p>
+                              )}
+                            </div>
+                          ) : myLoan ? (
                             <>
                               <p className="mb-2 text-center text-xs">
                                 {myLoan.dueAt ? (

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import PageHeader from "@/components/PageHeader";
-import { deleteItem, refreshItemPrices } from "@/app/actions/items";
+import { deleteItem, refreshItemPrices, toggleItemAvailability } from "@/app/actions/items";
 import { formatCoins, PRICE_STATUS, ROLES } from "@/lib/constants";
 
 export default async function VerwaltenPage({
@@ -158,7 +158,17 @@ export default async function VerwaltenPage({
                             <img src={item.imageUrl} alt={item.name} className="h-full w-full object-contain" />
                           )}
                         </div>
-                        <span className="font-medium">{item.name}</span>
+                        <div className="min-w-0">
+                          <span className="font-medium">{item.name}</span>
+                          {item.unavailable && (
+                            <span className="ml-2 rounded-full border border-danger/40 bg-danger/10 px-2 py-0.5 text-[11px] font-medium text-danger">
+                              gesperrt
+                            </span>
+                          )}
+                          {item.unavailable && item.unavailableReason && (
+                            <p className="truncate text-[11px] text-muted">{item.unavailableReason}</p>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-muted">{item.category?.name ?? "-"}</td>
@@ -183,6 +193,26 @@ export default async function VerwaltenPage({
                         >
                           Bearbeiten
                         </Link>
+                        <form action={toggleItemAvailability.bind(null, item.id)} className="flex gap-1">
+                          {!item.unavailable && (
+                            <input
+                              type="text"
+                              name="reason"
+                              placeholder="Grund (optional)"
+                              className="w-32 rounded-lg border border-border bg-surface px-2 py-1.5 text-xs outline-none ring-accent/40 focus:ring-2"
+                            />
+                          )}
+                          <button
+                            type="submit"
+                            className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
+                              item.unavailable
+                                ? "border-accent-2/40 bg-accent-2/10 text-accent-2 hover:bg-accent-2/20"
+                                : "border-border hover:bg-surface-2"
+                            }`}
+                          >
+                            {item.unavailable ? "Freigeben" : "Sperren"}
+                          </button>
+                        </form>
                         <form action={deleteItem.bind(null, item.id)}>
                           <button
                             type="submit"

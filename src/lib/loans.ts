@@ -38,6 +38,14 @@ export async function borrowItemCore(
     prisma.member.findUnique({ where: { id: memberId } }),
   ]);
   if (!item) return { ok: false, error: "Item nicht gefunden." };
+  if (item.unavailable) {
+    return {
+      ok: false,
+      error: item.unavailableReason
+        ? `Dieses Item ist derzeit nicht ausleihbar: ${item.unavailableReason}`
+        : "Dieses Item ist derzeit nicht ausleihbar.",
+    };
+  }
   if (!member) return { ok: false, error: "Mitglied nicht gefunden." };
 
   const now = new Date();

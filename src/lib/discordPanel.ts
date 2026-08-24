@@ -78,6 +78,8 @@ type PanelItem = {
   name: string;
   quantityTotal: number;
   free: number;
+  /** Voruebergehend gesperrt - wird angezeigt, aber nicht ausleihbar. */
+  unavailable: boolean;
 };
 
 type PanelCategory = {
@@ -120,7 +122,8 @@ async function loadPanelCategories(): Promise<{
       id: item.id,
       name: item.name,
       quantityTotal: item.quantityTotal,
-      free,
+      free: item.unavailable ? 0 : free,
+      unavailable: item.unavailable,
     });
   }
 
@@ -159,7 +162,7 @@ async function planPanelMessages(): Promise<PlannedMessage[]> {
             "> **2.** Auf **Ausleihen** klicken — fertig",
             "> **3.** Nach **2 Stunden** zurückgeben, sonst gibt es eine Sperre",
             "",
-            "🟢 frei · 🟡 fast vergriffen · 🔴 komplett verliehen",
+            "🟢 frei · 🟡 fast vergriffen · 🔴 komplett verliehen · ⛔ gesperrt",
           ].join("\n"),
           color: 0xf2b544,
           fields: [
@@ -191,11 +194,12 @@ async function planPanelMessages(): Promise<PlannedMessage[]> {
           ? `${emoji}  ${category.label}  ·  Teil ${pageIndex + 1}/${pages.length}`
           : `${emoji}  ${category.label}`;
 
-      const lines = pageItems.map(
-        (item) =>
-          `${availabilityIcon(item.free, item.quantityTotal)} **${item.name}**\n` +
-          ` \`${availabilityBar(item.free, item.quantityTotal)}\` ${item.free}/${item.quantityTotal} frei`
-      );
+      const lines = pageItems.map((item) => {
+        const head = `**${item.name}**`;
+        if (item.unavailable) return `⛔ ${head}\n \`gesperrt\` derzeit nicht ausleihbar`;
+        const bar = availabilityBar(item.free, item.quantityTotal);
+        return `${availabilityIcon(item.free, item.quantityTotal)} ${head}\n \`${bar}\` ${item.free}/${item.quantityTotal} frei`;
+      });
 
       planned.push({
         sortKey: `1_${String(categoryIndex).padStart(3, "0")}_${category.key}_${pageIndex}`,
@@ -223,9 +227,12 @@ async function planPanelMessages(): Promise<PlannedMessage[]> {
                   custom_id: CATEGORY_ITEM_SELECT_ID,
                   placeholder: `${category.label} — Item auswählen…`.slice(0, 150),
                   options: pageItems.map((item) => ({
-                    label: `${availabilityIcon(item.free, item.quantityTotal)} ${item.name}`.slice(0, 100),
+                    label: `${item.unavailable ? "⛔" : availabilityIcon(item.free, item.quantityTotal)} ${item.name}`.slice(0, 100),
                     value: item.id,
-                    description: `${item.free} von ${item.quantityTotal} frei`.slice(0, 100),
+                    description: (item.unavailable
+                      ? "derzeit nicht ausleihbar"
+                      : `${item.free} von ${item.quantityTotal} frei`
+                    ).slice(0, 100),
                   })),
                 },
               ],

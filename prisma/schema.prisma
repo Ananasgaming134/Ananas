@@ -186,6 +186,11 @@ model Item {
   categoryId     String?
   category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   quantityTotal  Int       @default(1)
+  // Vorruebergehend gesperrt (z.B. Item verliehen an Dritte, in Reparatur,
+  // verschollen): bleibt im Bestand sichtbar, kann aber nicht ausgeliehen
+  // werden. Jederzeit wieder freischaltbar.
+  unavailable       Boolean   @default(false)
+  unavailableReason String?
   createdById    String?
 
   createdAt      DateTime  @default(now())

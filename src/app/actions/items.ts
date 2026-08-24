@@ -330,3 +330,37 @@ export async function refreshItemPrices() {
   refreshItemPages();
   await refreshPanelsQuietly();
 }
+
+/**
+ * Schaltet ein Item voruebergehend als "nicht ausleihbar" (z.B. in Reparatur,
+ * verschollen) bzw. wieder frei. Das Item bleibt im Bestand sichtbar - nur
+ * das Ausleihen wird blockiert.
+ */
+export async function toggleItemAvailability(itemId: string, formData: FormData) {
+  const actor = await requireMember(ROLES.OWNER);
+  const item = await prisma.item.findUnique({ where: { id: itemId } });
+  if (!item) return;
+
+  const makeUnavailable = !item.unavailable;
+  const reason = String(formData.get("reason") ?? "").trim();
+
+  await prisma.item.update({
+    where: { id: itemId },
+    data: {
+      unavailable: makeUnavailable,
+      unavailableReason: makeUnavailable ? reason || null : null,
+    },
+  });
+
+  await logAction({
+    actorId: actor.id,
+    action: makeUnavailable ? "ITEM_DISABLED" : "ITEM_ENABLED",
+    details: makeUnavailable
+      ? `"${item.name}" als nicht ausleihbar markiert${reason ? `: ${reason}` : "."}`
+      : `"${item.name}" wieder freigegeben.`,
+  });
+
+  await refreshPanelsQuietly();
+  revalidatePath("/dashboard/items");
+  revalidatePath("/dashboard/verwaltung/items");
+}
