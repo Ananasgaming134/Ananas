@@ -8,7 +8,14 @@ import {
   roleIdsFromEnv,
   sendDiscordDirectMessage,
 } from "@/lib/discord";
-import { MEMBER_STATUS, ROLES, SITE_NAME, SITE_URL, hasAtLeastRole } from "@/lib/constants";
+import {
+  MEMBER_STATUS,
+  ROLES,
+  SITE_NAME,
+  SITE_URL,
+  hasAtLeastRole,
+  type RoleValue,
+} from "@/lib/constants";
 
 /**
  * Zahlungsfrist nach Vergabe der Kunde-Rolle: wer die Rolle bekommt, aber
@@ -290,7 +297,10 @@ export async function enforceAccessRules(): Promise<EnforceResult> {
 // ein Rollenentzug praktisch sofort greift (der Gateway-Handler reagiert
 // ohnehin in Echtzeit), und lang genug, um Rate-Limits zu vermeiden.
 const ROLE_CACHE_MS = 15_000;
-const roleCheckCache = new Map<string, { until: number; status: RoleSyncStatus }>();
+// Gecacht wird die in Discord GEFUNDENE Rolle, nicht das Ergebnis des
+// Vergleichs. Sonst wuerde eine Abweichung zwischen Datenbank und Discord
+// innerhalb des Cache-Fensters uebersehen.
+const roleCheckCache = new Map<string, { until: number; role: RoleValue | null }>();
 
 /**
  * Serverseitige Dauerpruefung fuer jeden Seitenaufruf (siehe requireMember):
@@ -324,14 +334,21 @@ export type RoleSyncStatus =
 export async function syncMemberRoleFromDiscord(member: Member): Promise<RoleSyncStatus> {
   if (!DISCORD_GUILD_ID || !process.env.DISCORD_BOT_TOKEN) return "ok";
 
+  // Nur der Discord-Aufruf wird gecacht - der Abgleich mit dem Datensatz
+  // passiert bei JEDEM Aufruf.
   const cached = roleCheckCache.get(member.discordId);
-  if (cached && cached.until > Date.now()) return cached.status;
+  let discordRole: RoleValue | null;
 
-  const result = await checkRoleLive(member.discordId);
-  if (result.status === "error") return "unknown";
+  if (cached && cached.until > Date.now()) {
+    discordRole = cached.role;
+  } else {
+    const result = await checkRoleLive(member.discordId);
+    if (result.status === "error") return "unknown";
+    discordRole = result.status === "revoked" ? null : result.role;
+    roleCheckCache.set(member.discordId, { until: Date.now() + ROLE_CACHE_MS, role: discordRole });
+  }
 
-  if (result.status === "revoked") {
-    roleCheckCache.set(member.discordId, { until: Date.now() + ROLE_CACHE_MS, status: "revoked" });
+  if (discordRole === null) {
     await revokeAccessAndRole(
       member,
       "Die LeihCenter-Rolle wurde auf Discord entfernt.",
@@ -340,21 +357,18 @@ export async function syncMemberRoleFromDiscord(member: Member): Promise<RoleSyn
     return "revoked";
   }
 
-  if (result.role !== member.role) {
+  if (discordRole !== member.role) {
     // Rechte sofort anpassen, damit auch ein noch offener Tab nichts mehr
     // darf, was der neuen Rolle nicht zusteht.
-    await prisma.member.update({ where: { id: member.id }, data: { role: result.role } });
+    await prisma.member.update({ where: { id: member.id }, data: { role: discordRole } });
     await logAction({
       targetId: member.id,
       action: "ROLE_AUTO_CHANGED",
-      details: `Rolle auf Discord geändert (${member.role} → ${result.role}). Neuanmeldung erforderlich.`,
+      details: `Rolle auf Discord geändert (${member.role} → ${discordRole}). Neuanmeldung erforderlich.`,
     });
-    // Nicht cachen: der naechste Aufruf soll den frischen Stand sehen.
-    roleCheckCache.delete(member.discordId);
     return "changed";
   }
 
-  roleCheckCache.set(member.discordId, { until: Date.now() + ROLE_CACHE_MS, status: "ok" });
   return "ok";
 }
 
