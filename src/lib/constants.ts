@@ -88,6 +88,8 @@ export const PRICE_STATUS = {
 export type PriceStatusValue = (typeof PRICE_STATUS)[keyof typeof PRICE_STATUS];
 
 export const SITE_NAME = "OP-LeihCenter";
+/** Oeffentliche Adresse der Website - fuer Links in Discord-Nachrichten und DMs. */
+export const SITE_URL = "https://op-leihcenter.de";
 export const SERVER_NAME = "OPSucht";
 export const SERVER_URL = "https://opsucht.net";
 // Der eigene Discord-Server des LeihCenters (Firma), NICHT der offizielle

@@ -26,19 +26,43 @@ export const TICKET_PANEL_CHANNEL_ID =
 export const TICKET_CLAIM_CHANNEL_ID =
   process.env.DISCORD_TICKET_CLAIM_CHANNEL_ID ?? "1540827374357057586";
 
+/** Kanal, in dem Abo-Start und Ablauf-Erinnerungen gemeldet werden. */
+export const ABO_CHANNEL_ID = process.env.DISCORD_ABO_CHANNEL_ID ?? "1469744413495394531";
+
+/** Kanal, in dem das Regelwerk gespiegelt wird (immer dieselbe Nachricht). */
+export const RULES_CHANNEL_ID = process.env.DISCORD_RULES_CHANNEL_ID ?? "1469716521965195396";
+
+/** Kanal, in dem Eintraege der roten Liste dokumentiert werden. */
+export const BLACKLIST_CHANNEL_ID = process.env.DISCORD_BLACKLIST_CHANNEL_ID ?? "1469743320350851213";
+
 /** Rolle, die Support- UND Verleih-Tickets claimen darf. */
 export const TICKET_CLAIM_ROLE_ID =
   process.env.DISCORD_TICKET_CLAIM_ROLE_ID ?? "1469722757196677200";
 
 /**
- * Owner-Rollen: duerfen immer alles - claimen, verwalten, direkt schliessen.
- * Enthaelt neben den fest vorgegebenen Rollen auch die allgemeine
- * Owner-Rolle aus DISCORD_ROLE_OWNER, damit beide Konfigurationswege greifen.
+ * Admin-Rolle: hat dieselben Rechte wie ein Owner, wird aber bewusst NICHT
+ * automatisch in neue Tickets gepingt (siehe ticketPingRoleIds).
+ */
+export const ADMIN_ROLE_ID = process.env.DISCORD_ROLE_ADMIN ?? "1541447823025901649";
+
+/**
+ * Rollen mit voller Berechtigung: Owner, Dev und Admin. Enthaelt neben den
+ * fest vorgegebenen Rollen auch die Owner-Rolle aus DISCORD_ROLE_OWNER, damit
+ * beide Konfigurationswege greifen.
  */
 export function ticketOwnerRoleIds(): string[] {
   const fromEnv = roleIdsFromEnv("DISCORD_TICKET_OWNER_ROLE_IDS");
   const base = fromEnv.length > 0 ? fromEnv : ["1469712028049346743", "1477054018097385514"];
-  return [...new Set([...base, ...roleIdsFromEnv("DISCORD_ROLE_OWNER")])];
+  return [...new Set([...base, ADMIN_ROLE_ID, ...roleIdsFromEnv("DISCORD_ROLE_OWNER")].filter(Boolean))];
+}
+
+/**
+ * Rollen, die bei einem neuen Ticket angepingt werden - bewusst OHNE die
+ * Admin-Rolle: Admins haben zwar alle Rechte, sollen aber nicht bei jedem
+ * Ticket benachrichtigt werden.
+ */
+export function ticketPingRoleIds(): string[] {
+  return ticketOwnerRoleIds().filter((id) => id !== ADMIN_ROLE_ID);
 }
 
 /** Aufsicht: darf claimen und Schliessanfragen stellen (nicht direkt schliessen). */
@@ -668,6 +692,37 @@ export async function registerSlashCommands(guildId: string): Promise<{ ok: bool
         // Bots kollidieren und taucht dann im Client nicht auf.
         name: "ticket-schliessen",
         description: "Stellt die Schließanfrage für dieses Ticket (Aufsicht/Owner)",
+      },
+      {
+        // Kundenbefehle bewusst als eigenstaendige Befehle statt als
+        // Unterbefehle - so koennen sie nicht mit anderen Bots kollidieren.
+        name: "guthaben",
+        description: "Zeigt dein Guthaben (nur für dich sichtbar)",
+      },
+      {
+        name: "profil",
+        description: "Zeigt dein Profil: Abo, Laufzeit, Guthaben (nur für dich sichtbar)",
+        options: [
+          {
+            type: 6, // USER
+            name: "user",
+            description: "Fremdes Profil ansehen (nur Aufsicht/Admin/Owner)",
+            required: false,
+          },
+        ],
+      },
+      {
+        name: "verlaengern",
+        description: "Verlängert dein Abo direkt von deinem Guthaben",
+        options: [
+          {
+            type: 3, // STRING
+            name: "paket",
+            description: "Nur nötig, wenn du noch kein Abo hast",
+            required: false,
+            choices: SUBSCRIPTION_PLANS.map((p) => ({ name: p.label, value: p.id })),
+          },
+        ],
       },
       {
         name: "ticket",

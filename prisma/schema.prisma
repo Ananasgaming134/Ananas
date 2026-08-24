@@ -89,10 +89,19 @@ model Member {
   lockNoticeSentAt DateTime?
 
   // Zahlungsfrist nach Vergabe der Kunde-Rolle: wer die Rolle bekommt, muss
-  // innerhalb von KUNDE_GRACE_MS (3 Stunden) ein Abo abschliessen - sonst
+  // innerhalb von KUNDE_GRACE_MS (24 Stunden) ein Abo abschliessen - sonst
   // entzieht enforceAccessRules() die Discord-Rolle automatisch wieder.
   // Wird beim Abo-Abschluss geleert (setSubscriptionPlanCore).
   graceUntil       DateTime?
+  // Wann die Zwischen-Erinnerung nach der halben Frist verschickt wurde -
+  // verhindert, dass sie bei jedem Cron-Lauf erneut rausgeht.
+  graceReminderSentAt DateTime?
+
+  // Wann zuletzt eine Ablauf-DM an den Kunden ging (einen Tag vor Ende) bzw.
+  // wann der Abo-Start im Abo-Kanal gemeldet wurde. Beide verhindern
+  // Doppelmeldungen und werden bei jeder Verlaengerung zurueckgesetzt.
+  expiryDmSentAt       DateTime?
+  subscriptionAnnouncedAt DateTime?
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -405,13 +414,46 @@ model MembershipApplicationItem {
 // expiresAt = null bedeutet dauerhafte Sperre (rote Liste); mit Datum ist es
 // eine befristete Aufnahmesperre - danach ist eine erneute Bewerbung wieder
 // moeglich, ohne dass der Eintrag manuell geloescht werden muss.
+// Rote Liste ("Blacklist"): wer hier steht, kann sich nicht bewerben und kein
+// Verleih-Ticket eroeffnen. Eintraege sind entweder dauerhaft (expiresAt =
+// null) oder befristet - befristete laufen automatisch aus, der Betroffene
+// bekommt dann eine DM (siehe expiryDmSentAt).
 model ApplicationBlock {
-  id          String   @id @default(cuid())
-  discordId   String   @unique
-  reason      String
-  blockedById String?
-  blockedAt   DateTime @default(now())
-  expiresAt   DateTime?
+  id            String   @id @default(cuid())
+  discordId     String   @unique
+  // Aus dem Blacklist-Kanal uebernommen bzw. beim Eintragen erfasst - damit
+  // die Person auch dann eindeutig bleibt, wenn sie Discord- oder
+  // Minecraft-Namen wechselt (die UUID aendert sich nie).
+  username      String?
+  displayName   String?
+  minecraftName String?
+  minecraftUuid String?
+  reason        String
+  blockedById   String?
+  blockedAt     DateTime @default(now())
+  expiresAt     DateTime?
+  // Nachricht im Blacklist-Kanal, damit ein Eintrag beim Entfernen dort
+  // ebenfalls als aufgehoben markiert werden kann.
+  discordMessageId String?
+  // Wann die "Sperre ist abgelaufen"-DM verschickt wurde.
+  expiryDmSentAt   DateTime?
+
+  @@index([expiresAt])
+}
+
+// Das Regelwerk: wird von Ownern auf der Website bearbeitet, auf der Website
+// angezeigt UND in einen festen Discord-Kanal gespiegelt. Beim Speichern wird
+// immer DIESELBE Discord-Nachricht aktualisiert statt eine neue zu posten -
+// deshalb wird die Message-ID hier festgehalten. Es gibt genau einen
+// Datensatz (singleton), erkennbar an key = "default".
+model RuleSet {
+  id               String   @id @default(cuid())
+  key              String   @unique @default("default")
+  content          String
+  discordMessageId String?
+  updatedById      String?
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
 }
 
 // Support- oder Bewerbungs-Ticket. Der eigentliche Verlauf findet in einem

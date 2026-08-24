@@ -7,14 +7,17 @@ import {
   roleIdsFromEnv,
   sendDiscordDirectMessage,
 } from "@/lib/discord";
-import { MEMBER_STATUS, ROLES, SITE_NAME, hasAtLeastRole } from "@/lib/constants";
+import { MEMBER_STATUS, ROLES, SITE_NAME, SITE_URL, hasAtLeastRole } from "@/lib/constants";
 
 /**
  * Zahlungsfrist nach Vergabe der Kunde-Rolle: wer die Rolle bekommt, aber
  * innerhalb dieser Zeit kein Abo abschliesst, verliert die Rolle automatisch
  * wieder (siehe enforceAccessRules).
  */
-export const KUNDE_GRACE_MS = 3 * 60 * 60 * 1000;
+export const KUNDE_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/** Nach der Haelfte der Frist geht eine Zwischen-Erinnerung raus. */
+export const KUNDE_GRACE_REMINDER_MS = KUNDE_GRACE_MS / 2;
 
 /**
  * Ein Abo gilt als aktiv, solange feePaidUntil in der Zukunft liegt. Eine
@@ -100,17 +103,104 @@ export async function startGracePeriodIfNeeded(memberId: string): Promise<void> 
   await logAction({
     targetId: memberId,
     action: "GRACE_PERIOD_STARTED",
-    details: "Kunde-Rolle vergeben - Abo muss innerhalb von 3 Stunden abgeschlossen werden.",
+    details: "Kunde-Rolle vergeben - Abo muss innerhalb von 24 Stunden abgeschlossen werden.",
   });
 
+  await sendWelcomeDm(member);
+}
+
+/**
+ * Ausfuehrliche Willkommens-DM bei Vergabe der Kunden-Rolle: erklaert
+ * Anmeldung, Guthaben-Aufladung, Abo-Abschluss, die Ticket-Alternative und
+ * die 24-Stunden-Frist. Bewusst vollstaendig, damit niemand nachfragen muss.
+ */
+export async function sendWelcomeDm(member: Member): Promise<void> {
+  const deadlineUnix = Math.floor((Date.now() + KUNDE_GRACE_MS) / 1000);
+
   await sendDiscordDirectMessage(member.discordId, {
-    content:
-      `👋 **${SITE_NAME}** — willkommen!\n\n` +
-      "Du hast jetzt die Kunden-Rolle. Damit sie bestehen bleibt, muss innerhalb der " +
-      "**nächsten 3 Stunden** ein Abo abgeschlossen sein.\n\n" +
-      "Dafür lädst du Guthaben auf die Business-Card **BC-584289** (Verwendungszweck: `Verleih <deine Kundennummer>`) " +
-      "und die Aufsicht bucht davon dein Paket ab. Ohne Abo wird die Rolle automatisch wieder entzogen.",
+    embeds: [
+      {
+        title: `👋 Willkommen im ${SITE_NAME}!`,
+        description: [
+          "Du hast die **Kunden-Rolle** bekommen. Hier kurz alles Wichtige:",
+          "",
+          "**1 · Auf der Website anmelden**",
+          `> ${SITE_URL}`,
+          "> Anmeldung per Discord — einfach oben auf „Anmelden“.",
+          "",
+          "**2 · Guthaben aufladen**",
+          "> Überweise einen beliebigen Betrag an die Business-Card **BC-584289**",
+          `> Verwendungszweck: \`Verleih ${member.customerNumber ?? "<deine Kundennummer>"}\``,
+          "> Der Betrag landet als Guthaben auf deinem Konto und bleibt dort.",
+          "> Praktisch: Als **Dauerauftrag** läuft das automatisch weiter.",
+          "",
+          "**3 · Abo abschließen**",
+          "> Auf der Website unter **Abo** dein Paket wählen — bei genug Guthaben",
+          "> wird es sofort abgebucht. Geht auch per `/abo verlaengern` hier in Discord.",
+          "",
+          "**Lieber ohne Business-Card?**",
+          "> Mach ein **Ticket** auf und sag Bescheid — dann kannst du das Geld",
+          "> direkt der zuständigen Person geben, die es dir gutschreibt.",
+          "",
+          `**⏳ Wichtig:** Ohne Abo bis <t:${deadlineUnix}:F> (<t:${deadlineUnix}:R>) wird die Kunden-Rolle automatisch wieder entzogen.`,
+          "",
+          "Ohne Abo kommst du zwar auf die Website, **ausleihen kannst du aber erst mit aktivem Abo**.",
+        ].join("\n"),
+        color: 0xf2b544,
+      },
+    ],
   }).catch(() => {});
+}
+
+/**
+ * Zwischen-Erinnerung nach der halben Frist - damit niemand die 24 Stunden
+ * schlicht verstreichen laesst. Geht nur einmal raus (graceReminderSentAt).
+ */
+export async function sendGraceReminders(): Promise<{ sent: number }> {
+  const now = new Date();
+  const due = await prisma.member.findMany({
+    where: {
+      status: MEMBER_STATUS.ACTIVE,
+      graceUntil: { not: null, gt: now },
+      graceReminderSentAt: null,
+      feePaidUntil: null,
+    },
+  });
+
+  let sent = 0;
+  for (const member of due) {
+    if (!member.graceUntil) continue;
+    const remaining = member.graceUntil.getTime() - now.getTime();
+    if (remaining > KUNDE_GRACE_REMINDER_MS) continue; // erst ab der Haelfte
+
+    const unix = Math.floor(member.graceUntil.getTime() / 1000);
+    await sendDiscordDirectMessage(member.discordId, {
+      embeds: [
+        {
+          title: "⏳ Erinnerung: Dein Abo fehlt noch",
+          description: [
+            `Deine Frist läuft <t:${unix}:R> ab (<t:${unix}:F>).`,
+            "",
+            "Ohne Abo wird die Kunden-Rolle dann automatisch entzogen.",
+            "",
+            `Guthaben aufladen: Business-Card **BC-584289**, Verwendungszweck \`Verleih ${member.customerNumber ?? "<Kundennummer>"}\``,
+            `Abo abschließen: ${SITE_URL}/dashboard/abo oder \`/abo verlaengern\``,
+            "",
+            "Fragen? Einfach ein Ticket aufmachen.",
+          ].join("\n"),
+          color: 0xf2545b,
+        },
+      ],
+    }).catch(() => {});
+
+    await prisma.member.update({
+      where: { id: member.id },
+      data: { graceReminderSentAt: now },
+    });
+    sent += 1;
+  }
+
+  return { sent };
 }
 
 export type EnforceResult = {
@@ -160,7 +250,7 @@ export async function enforceAccessRules(): Promise<EnforceResult> {
 
     // 1b. Rolle vorhanden, aber noch nie ein Abo und auch keine laufende
     // Frist (z.B. Rolle wurde vergeben, waehrend die App nicht lief). Statt
-    // sofort zu sperren bekommt die Person regulaer ihre 3 Stunden.
+    // sofort zu sperren bekommt die Person regulaer ihre 24 Stunden.
     if (!member.feePaidUntil && !member.graceUntil && !member.pausedAt) {
       await startGracePeriodIfNeeded(member.id);
       continue;
@@ -170,7 +260,7 @@ export async function enforceAccessRules(): Promise<EnforceResult> {
     if (member.graceUntil && member.graceUntil <= now && !hasActiveSubscription(member, now)) {
       await revokeAccessAndRole(
         member,
-        "Innerhalb von 3 Stunden nach der Rollenvergabe wurde kein Abo abgeschlossen.",
+        "Innerhalb von 24 Stunden nach der Rollenvergabe wurde kein Abo abgeschlossen.",
         "ACCESS_REVOKED_GRACE_EXPIRED"
       );
       result.graceExpired += 1;

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
+import { isBlacklisted } from "@/lib/blacklist";
 import {
   TICKET_CLAIM_CHANNEL_ID,
   TICKET_CLAIM_ROLE_ID,
@@ -16,6 +17,7 @@ import {
   revokeChannelSendPermission,
   roleIdsFromEnv,
   ticketOwnerRoleIds,
+  ticketPingRoleIds,
 } from "@/lib/discord";
 import {
   TICKET_CLAIM_PREFIX,
@@ -70,6 +72,17 @@ export type CreateTicketResult = { ok: true; ticketId: string } | { ok: false; e
  * auf der Website einfach.
  */
 export async function createTicketCore(input: CreateTicketInput): Promise<CreateTicketResult> {
+  // Rote Liste sperrt Verleih-Anfragen. Support bleibt bewusst offen, damit
+  // Betroffene sich melden und die Sperre klaeren koennen.
+  if (input.category === TICKET_CATEGORY.VERLEIH || input.category === TICKET_CATEGORY.BEWERBUNG) {
+    if (await isBlacklisted(input.applicantDiscordId)) {
+      return {
+        ok: false,
+        error: "Für diesen Account ist keine Verleih-Anfrage möglich (rote Liste). Bei Fragen dazu ein Support-Ticket eröffnen.",
+      };
+    }
+  }
+
   const existingOpen = await prisma.ticket.findFirst({
     where: {
       applicantDiscordId: input.applicantDiscordId,
@@ -178,7 +191,7 @@ async function provisionTicketChannel(
   };
 
   // Owner werden bei JEDEM neuen Ticket direkt mit angepingt.
-  const ownerRoles = ticketOwnerRoleIds();
+  const ownerRoles = ticketPingRoleIds();
   const ownerPing = ownerRoles.map((r) => `<@&${r}>`).join(" ");
 
   // Bewusst OHNE Schliess-Button: das Schliessen laeuft ausschliesslich ueber
@@ -225,7 +238,7 @@ async function postToQueue(
     body: JSON.stringify({
       // Zustaendige Rolle UND Owner werden hier bewusst angepingt - das ist
       // der Arbeitskanal des Teams, hier soll die Meldung auffallen.
-      content: [TICKET_CLAIM_ROLE_ID, ...ticketOwnerRoleIds()]
+      content: [TICKET_CLAIM_ROLE_ID, ...ticketPingRoleIds()]
         .map((r) => `<@&${r}>`)
         .join(" "),
       embeds: [
@@ -236,7 +249,7 @@ async function postToQueue(
           footer: { text: "Noch nicht übernommen" },
         },
       ],
-      allowed_mentions: { roles: [TICKET_CLAIM_ROLE_ID, ...ticketOwnerRoleIds()] },
+      allowed_mentions: { roles: [TICKET_CLAIM_ROLE_ID, ...ticketPingRoleIds()] },
       components: [
         {
           type: 1,

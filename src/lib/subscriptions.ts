@@ -1,7 +1,12 @@
 import type { Member } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { DISCORD_BOT_TOKEN, DISCORD_SUBSCRIPTION_CHANNEL_ID, sendDiscordDirectMessage } from "@/lib/discord";
+import {
+  ABO_CHANNEL_ID,
+  DISCORD_BOT_TOKEN,
+  DISCORD_SUBSCRIPTION_CHANNEL_ID,
+  sendDiscordDirectMessage,
+} from "@/lib/discord";
 import { formatCoins, getSubscriptionPlan, SITE_NAME, SUBSCRIPTION_PLANS, type SubscriptionPlan } from "@/lib/constants";
 
 export const RENEW_PREFIX = "leihcenter_renew:";
@@ -90,11 +95,18 @@ export async function setSubscriptionPlanCore(
       feePaidUntil: newExpiry,
       subscriptionReminderSentAt: null,
       balance: { decrement: plan.price },
-      // Abo steht - die 3-Stunden-Zahlungsfrist nach der Rollenvergabe ist
-      // damit erfuellt und darf nicht mehr zum Rollenentzug fuehren.
+      // Abo steht - die Zahlungsfrist nach der Rollenvergabe ist damit
+      // erfuellt und darf nicht mehr zum Rollenentzug fuehren.
       graceUntil: null,
+      graceReminderSentAt: null,
+      // Neue Laufzeit: Ablauf-Benachrichtigungen duerfen wieder rausgehen.
+      expiryDmSentAt: null,
+      subscriptionAnnouncedAt: null,
     },
   });
+
+  // Abo-Kanal informieren (Start + voraussichtliches Ende).
+  await announceSubscription(memberId, plan, newExpiry).catch(() => {});
 
   await logAction({
     actorId,
@@ -104,6 +116,154 @@ export async function setSubscriptionPlanCore(
   });
 
   return { ok: true, plan, newExpiry };
+}
+
+/**
+ * Selbstbedienung fuer Kunden: das EIGENE Paket erneut buchen (verlaengern)
+ * oder - falls noch gar kein Abo besteht - das erste Paket waehlen. Beides
+ * wird sofort vom Guthaben abgebucht, ohne Freigabe.
+ *
+ * Ein Wechsel auf ein ANDERES Paket laeuft bewusst weiter ueber den Antrag
+ * (requestPlanChangeCore), damit die Aufsicht das mitbekommt.
+ */
+export async function renewOwnSubscriptionCore(
+  memberId: string,
+  planId: string
+): Promise<SetSubscriptionResult> {
+  const member = await prisma.member.findUnique({ where: { id: memberId } });
+  if (!member) return { ok: false, error: "Mitglied nicht gefunden." };
+
+  if (member.subscriptionPlan && member.subscriptionPlan !== planId) {
+    const current = getSubscriptionPlan(member.subscriptionPlan);
+    return {
+      ok: false,
+      error: `Du hast aktuell „${current?.label ?? member.subscriptionPlan}“. Ein Wechsel auf ein anderes Paket muss beantragt werden — das geht auf der Website unter „Abo“.`,
+    };
+  }
+
+  return setSubscriptionPlanCore(memberId, planId, memberId);
+}
+
+/**
+ * Meldet einen frisch abgeschlossenen bzw. verlaengerten Abo-Zeitraum im
+ * Abo-Kanal: wer, welches Paket, ab wann und bis wann. Best-effort - schlaegt
+ * die Meldung fehl, bleibt das Abo trotzdem gueltig.
+ */
+export async function announceSubscription(
+  memberId: string,
+  plan: SubscriptionPlan,
+  newExpiry: Date
+): Promise<void> {
+  if (!DISCORD_BOT_TOKEN || !ABO_CHANNEL_ID) return;
+
+  const member = await prisma.member.findUnique({ where: { id: memberId } });
+  if (!member) return;
+
+  const startUnix = Math.floor(Date.now() / 1000);
+  const endUnix = Math.floor(newExpiry.getTime() / 1000);
+
+  await fetch(`https://discord.com/api/v10/channels/${ABO_CHANNEL_ID}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      embeds: [
+        {
+          title: "✅ Abo abgeschlossen",
+          description: `<@${member.discordId}> — **${plan.label}**`,
+          color: 0x3ddc97,
+          fields: [
+            { name: "Preis", value: formatCoins(plan.price), inline: true },
+            { name: "Beginn", value: `<t:${startUnix}:d>`, inline: true },
+            { name: "Läuft bis", value: `<t:${endUnix}:d> (<t:${endUnix}:R>)`, inline: true },
+          ],
+          footer: { text: `Kundennummer ${member.customerNumber ?? "-"}` },
+        },
+      ],
+      allowed_mentions: { parse: [] },
+    }),
+  }).catch(() => {});
+
+  await prisma.member.update({
+    where: { id: memberId },
+    data: { subscriptionAnnouncedAt: new Date() },
+  }).catch(() => {});
+}
+
+/**
+ * Laeuft per Cron: benachrichtigt einen Tag vor Ablauf sowohl den Kunden per
+ * DM als auch den Abo-Kanal, damit das Team nachfassen kann. Geht pro
+ * Laufzeit nur einmal raus (expiryDmSentAt wird bei jeder Verlaengerung
+ * zurueckgesetzt).
+ */
+export async function sendExpiryNotices(): Promise<{ sent: number }> {
+  const now = new Date();
+  const inOneDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+  const due = await prisma.member.findMany({
+    where: {
+      status: "ACTIVE",
+      pausedAt: null,
+      feePaidUntil: { not: null, gt: now, lte: inOneDay },
+      expiryDmSentAt: null,
+    },
+  });
+
+  let sent = 0;
+  for (const member of due) {
+    if (!member.feePaidUntil) continue;
+    const unix = Math.floor(member.feePaidUntil.getTime() / 1000);
+    const plan = getSubscriptionPlan(member.subscriptionPlan);
+    const enough = plan ? member.balance >= plan.price : false;
+
+    await sendDiscordDirectMessage(member.discordId, {
+      embeds: [
+        {
+          title: "⏰ Dein Abo läuft bald ab",
+          description: [
+            `Dein Abo **${plan?.label ?? "—"}** endet <t:${unix}:R> (<t:${unix}:F>).`,
+            "",
+            enough
+              ? `Dein Guthaben (**${formatCoins(member.balance)}**) reicht für die Verlängerung — einfach \`/abo verlaengern\` hier in Discord oder auf der Website unter „Abo“.`
+              : [
+                  `Dein Guthaben beträgt **${formatCoins(member.balance)}**, die Verlängerung kostet **${formatCoins(plan?.price ?? 0)}**.`,
+                  "",
+                  `Lade auf die Business-Card **BC-584289** auf, Verwendungszweck \`Verleih ${member.customerNumber ?? "<Kundennummer>"}\`.`,
+                  "Lieber ohne Business-Card? Mach ein Ticket auf, dann geht es auch direkt.",
+                ].join("\n"),
+            "",
+            "Läuft das Abo ab, verlierst du die Kunden-Rolle und kannst nichts mehr ausleihen.",
+          ].join("\n"),
+          color: 0xf2b544,
+        },
+      ],
+    }).catch(() => {});
+
+    if (DISCORD_BOT_TOKEN && ABO_CHANNEL_ID) {
+      await fetch(`https://discord.com/api/v10/channels/${ABO_CHANNEL_ID}/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          embeds: [
+            {
+              title: "⏰ Abo läuft morgen ab",
+              description:
+                `<@${member.discordId}> — **${plan?.label ?? "—"}** endet <t:${unix}:R>.\n` +
+                `Guthaben: **${formatCoins(member.balance)}**${enough ? " (reicht zum Verlängern)" : " — reicht noch nicht"}\n\n` +
+                "Bitte einmal nachfragen, ob verlängert werden soll.",
+              color: enough ? 0xf2b544 : 0xf2545b,
+              footer: { text: `Kundennummer ${member.customerNumber ?? "-"}` },
+            },
+          ],
+          allowed_mentions: { parse: [] },
+        }),
+      }).catch(() => {});
+    }
+
+    await prisma.member.update({ where: { id: member.id }, data: { expiryDmSentAt: now } });
+    sent += 1;
+  }
+
+  return { sent };
 }
 
 export type PauseActionResult = { ok: true } | { ok: false; error: string };

@@ -34,6 +34,7 @@ const KUNDENBEREICH_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/tickets", label: "Tickets", icon: "🎫" },
       { href: "/dashboard/bewertungen", label: "Bewertungen", icon: "⭐" },
+      { href: "/dashboard/regelwerk", label: "Regelwerk", icon: "📗" },
       { href: "/dashboard/anleitung", label: "Anleitung", icon: "📖" },
       { href: "/dashboard/hilfe", label: "Hilfe", icon: "💬" },
     ],
@@ -54,6 +55,7 @@ const VERWALTUNG_GROUPS: NavGroup[] = [
       { href: "/dashboard/verwaltung/bewerbungen", label: "Bewerbungen", icon: "📝", minRole: ROLES.OWNER },
       { href: "/dashboard/verwaltung/tickets", label: "Tickets", icon: "🎫" },
       { href: "/dashboard/verwaltung/mitglieder", label: "Mitglieder-Archiv", icon: "🗃️" },
+      { href: "/dashboard/verwaltung/rote-liste", label: "Rote Liste", icon: "🚫" },
     ],
   },
   {
@@ -62,6 +64,7 @@ const VERWALTUNG_GROUPS: NavGroup[] = [
       { href: "/dashboard/verwaltung/items", label: "Items", icon: "📦", minRole: ROLES.OWNER },
       { href: "/dashboard/verwaltung/zahlungen", label: "Zahlungen", icon: "💰" },
       { href: "/dashboard/verwaltung/logs", label: "Logs", icon: "📜" },
+      { href: "/dashboard/verwaltung/regelwerk", label: "Regelwerk", icon: "📗", minRole: ROLES.OWNER },
       { href: "/dashboard/verwaltung/bot", label: "Discord-Server", icon: "🤖", minRole: ROLES.OWNER },
     ],
   },

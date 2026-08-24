@@ -10,7 +10,7 @@ import {
   postOrUpdateTicketPanel,
   refreshPanelsQuietly,
 } from "@/lib/discordPanel";
-import { RENEW_PREFIX, setSubscriptionPlanCore } from "@/lib/subscriptions";
+import { RENEW_PREFIX, renewOwnSubscriptionCore, setSubscriptionPlanCore } from "@/lib/subscriptions";
 import { applyAndOpenTicketCore } from "@/lib/applications";
 import {
   approvePlanChangeCore,
@@ -71,7 +71,15 @@ import {
 import { resetWordChain } from "@/lib/wordChain";
 import { getGeneralStats, getPersonalStats, rankedToLines } from "@/lib/stats";
 import { verifyMemberCore } from "@/lib/verification";
-import { LOAN_CHANNEL, LOAN_STATUS, MEMBER_STATUS, SITE_NAME, SUBSCRIPTION_PLANS } from "@/lib/constants";
+import {
+  LOAN_CHANNEL,
+  LOAN_STATUS,
+  MEMBER_STATUS,
+  SITE_NAME,
+  SUBSCRIPTION_PLANS,
+  formatCoins,
+  getSubscriptionPlan,
+} from "@/lib/constants";
 
 const PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY ?? "";
 const EPHEMERAL = 64;
@@ -208,6 +216,14 @@ async function handleCommand(interaction: DiscordInteractionPayload) {
 
   if (commandName === "ticket-schliessen") {
     return handleTicketCloseCommand(interaction, invokerRoles);
+  }
+
+  if (commandName === "guthaben" || commandName === "profil" || commandName === "verlaengern") {
+    const discordUser = interaction.member?.user ?? interaction.user;
+    if (!discordUser) return ephemeral("Konnte deinen Discord-Account nicht ermitteln.");
+    if (commandName === "guthaben") return handleBalanceCommand(discordUser);
+    if (commandName === "profil") return handleProfileCommand(interaction, invokerRoles, discordUser);
+    return handleRenewCommand(interaction, discordUser);
   }
 
   if (commandName === "statistik") {
@@ -1091,6 +1107,119 @@ async function handleAboCommand(interaction: DiscordInteractionPayload, invokerR
  * Owner oder die Person, die das Ticket geclaimt hat, darf weitere Leute
  * hinzufuegen (siehe Plan: Warteschlangen-Modell mit Einzel-Claim-Zugriff).
  */
+/** "/guthaben" - eigener Guthabenstand, nur fuer den Aufrufer sichtbar. */
+async function handleBalanceCommand(discordUser: DiscordInteractionUser) {
+  const member = await prisma.member.findUnique({ where: { discordId: discordUser.id } });
+  if (!member) return ephemeral("Für dich existiert noch keine Akte im LeihCenter.");
+
+  const plan = getSubscriptionPlan(member.subscriptionPlan);
+  const lines = [
+    `**Guthaben:** ${formatCoins(member.balance)}`,
+    plan
+      ? `**Dein Paket:** ${plan.label} (${formatCoins(plan.price)} pro Verlängerung)`
+      : "**Dein Paket:** noch keins gewählt",
+    "",
+    plan && member.balance >= plan.price
+      ? "✅ Reicht für eine Verlängerung — einfach `/verlaengern`."
+      : `Zum Aufladen: Business-Card **BC-584289**, Verwendungszweck \`Verleih ${member.customerNumber ?? "-"}\`.`,
+  ];
+
+  return ephemeral(lines.join("\n"));
+}
+
+/**
+ * "/profil" - eigenes Profil. Mit "user"-Option auch fremde Profile, das
+ * duerfen aber nur Aufsicht, Admin und Owner.
+ */
+async function handleProfileCommand(
+  interaction: DiscordInteractionPayload,
+  invokerRoles: string[],
+  discordUser: DiscordInteractionUser
+) {
+  const requested = interaction.data?.options?.find((o) => o.name === "user")?.value;
+  const isStaff = hasStaffRole(invokerRoles) || canClaimTicket(invokerRoles);
+
+  if (requested && String(requested) !== discordUser.id && !isStaff) {
+    return ephemeral("❌ Fremde Profile dürfen nur Aufsicht, Admin und Owner ansehen.");
+  }
+
+  const targetId = requested ? String(requested) : discordUser.id;
+  const member = await prisma.member.findUnique({ where: { discordId: targetId } });
+  if (!member) return ephemeral("Für diese Person existiert noch keine Akte.");
+
+  const plan = getSubscriptionPlan(member.subscriptionPlan);
+  const now = new Date();
+  const active = Boolean(member.feePaidUntil && member.feePaidUntil > now);
+  const activeLoans = await prisma.loan.count({
+    where: { memberId: member.id, status: LOAN_STATUS.ACTIVE },
+  });
+
+  const fields = [
+    { name: "Kundennummer", value: member.customerNumber ?? "—", inline: true },
+    { name: "Minecraft", value: member.minecraftName || "—", inline: true },
+    { name: "Guthaben", value: formatCoins(member.balance), inline: true },
+    { name: "Paket", value: plan?.label ?? "keins", inline: true },
+    {
+      name: "Abo",
+      value: member.feePaidUntil
+        ? `${active ? "aktiv" : "abgelaufen"} · <t:${Math.floor(member.feePaidUntil.getTime() / 1000)}:d>`
+        : "kein Abo",
+      inline: true,
+    },
+    { name: "Aktuell ausgeliehen", value: String(activeLoans), inline: true },
+  ];
+
+  if (member.pausedAt) {
+    fields.push({ name: "Pausiert", value: member.pauseReason ?? "ja", inline: false });
+  }
+  if (member.graceUntil && !member.feePaidUntil) {
+    fields.push({
+      name: "⏳ Abo-Frist",
+      value: `läuft <t:${Math.floor(member.graceUntil.getTime() / 1000)}:R> ab`,
+      inline: false,
+    });
+  }
+
+  return Response.json({
+    type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+    data: {
+      flags: EPHEMERAL,
+      embeds: [
+        {
+          title: `👤 ${member.displayName}`,
+          color: active ? 0x3ddc97 : 0xf2b544,
+          fields,
+          footer: { text: active ? "Ausleihen möglich" : "Ohne aktives Abo kein Ausleihen" },
+        },
+      ],
+    },
+  });
+}
+
+/** "/verlaengern" - bucht das eigene Paket erneut vom Guthaben ab. */
+async function handleRenewCommand(
+  interaction: DiscordInteractionPayload,
+  discordUser: DiscordInteractionUser
+) {
+  const member = await prisma.member.findUnique({ where: { discordId: discordUser.id } });
+  if (!member) return ephemeral("Für dich existiert noch keine Akte im LeihCenter.");
+
+  const chosen = interaction.data?.options?.find((o) => o.name === "paket")?.value;
+  const planId = chosen ? String(chosen) : member.subscriptionPlan;
+  if (!planId) {
+    return ephemeral(
+      "Du hast noch kein Paket. Wähle eins mit `/verlaengern paket:<Paket>` — oder auf der Website unter „Abo“."
+    );
+  }
+
+  return deferAndRun(interaction, async () => {
+    const result = await renewOwnSubscriptionCore(member.id, planId);
+    if (!result.ok) return `❌ ${result.error}`;
+    const unix = Math.floor(result.newExpiry.getTime() / 1000);
+    return `✅ **${result.plan.label}** gebucht (${formatCoins(result.plan.price)} abgebucht).\nLäuft jetzt bis <t:${unix}:D> (<t:${unix}:R>).`;
+  });
+}
+
 /**
  * Schliessanfrage fuer das Ticket, in dessen Thread der Befehl ausgefuehrt
  * wird. Erreichbar als "/ticket-schliessen" und als "/ticket schliessen" -

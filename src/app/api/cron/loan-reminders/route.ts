@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { enforceAccessRules } from "@/lib/accessControl";
 import { autoCloseExpiredCloseRequests } from "@/lib/tickets";
+import { sendGraceReminders } from "@/lib/accessControl";
+import { sendExpiryNotices } from "@/lib/subscriptions";
+import { expireBlacklistEntries } from "@/lib/blacklist";
 import { processLoanReminders } from "@/lib/loanReminders";
 import { postSubscriptionReminders } from "@/lib/subscriptions";
 import { syncMinecraftNames } from "@/lib/verification";
@@ -40,6 +43,12 @@ export async function GET(request: Request) {
   // laeuft minuetlich mit, damit die Frist auf die Minute genau endet.
   const ticketAutoClose = await autoCloseExpiredCloseRequests().catch((err) => ({ error: String(err) }));
 
+  // Benachrichtigungen: Zwischen-Erinnerung zur Abo-Frist, Ablauf-Hinweis
+  // einen Tag vorher und das Auslaufen befristeter Sperren.
+  const graceReminders = await sendGraceReminders().catch((err) => ({ error: String(err) }));
+  const expiryNotices = await sendExpiryNotices().catch((err) => ({ error: String(err) }));
+  const blacklistExpiry = await expireBlacklistEntries().catch((err) => ({ error: String(err) }));
+
   const hourly = url.searchParams.get("hourly") === "1" || new Date().getMinutes() === 0;
   let subscriptions: unknown = "übersprungen";
   let nameSync: unknown = "übersprungen";
@@ -49,5 +58,15 @@ export async function GET(request: Request) {
     nameSync = await syncMinecraftNames().catch((err) => ({ error: String(err) }));
   }
 
-  return NextResponse.json({ ok: true, ...result, access, ticketAutoClose, subscriptions, nameSync });
+  return NextResponse.json({
+    ok: true,
+    ...result,
+    access,
+    ticketAutoClose,
+    graceReminders,
+    expiryNotices,
+    blacklistExpiry,
+    subscriptions,
+    nameSync,
+  });
 }
