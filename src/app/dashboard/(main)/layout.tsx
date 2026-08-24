@@ -27,9 +27,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <span className="text-sm font-semibold tracking-tight">{SITE_NAME}</span>
             </Link>
 
-            <DashboardNav role={member.role} />
+            {/* min-h-0 ist noetig, damit der Bereich im Flex-Container
+                schrumpfen darf - sonst waechst die Navigation ueber die
+                Kartenhoehe hinaus und die unteren Punkte sind nicht
+                erreichbar. */}
+            <div className="nav-scroll -mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
+              <DashboardNav role={member.role} />
+            </div>
 
-            <div className="mt-auto space-y-3 border-t border-border pt-4">
+            <div className="mt-4 shrink-0 space-y-3 border-t border-border pt-4">
               <div className="flex items-center gap-2 px-1">
                 {member.avatarUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element

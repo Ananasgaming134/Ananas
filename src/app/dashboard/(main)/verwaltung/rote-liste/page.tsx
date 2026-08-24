@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { removeBlacklistEntry, importBlacklist } from "@/app/actions/blacklist";
 import BlacklistForm from "@/components/BlacklistForm";
 import StatCard from "@/components/StatCard";
+import PageHeader from "@/components/PageHeader";
 import { hasAtLeastRole, ROLES } from "@/lib/constants";
 
 export default async function RoteListePage({
@@ -38,19 +39,16 @@ export default async function RoteListePage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Rote Liste</h1>
-        <p className="mt-1 text-sm text-muted">
-          Wer hier steht, kann sich nicht bewerben und kein Verleih-Ticket eröffnen. Support-Tickets
-          bleiben möglich, damit Betroffene sich melden können. Befristete Sperren laufen automatisch
-          aus — die Person bekommt dann eine DM.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Verwaltung"
+        title="Rote Liste"
+        description="Wer hier steht, kann sich nicht bewerben und kein Verleih-Ticket eröffnen. Support-Tickets bleiben möglich, damit Betroffene sich melden können. Befristete Sperren laufen automatisch aus — die Person bekommt dann eine DM."
+      />
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard label="Einträge gesamt" value={String(total)} accent="danger" icon="🚫" />
-        <StatCard label="Dauerhaft" value={String(permanent)} accent="danger" />
-        <StatCard label="Befristet" value={String(temporary)} />
+        <StatCard label="Dauerhaft" value={String(permanent)} accent="danger" icon="⛔" />
+        <StatCard label="Befristet" value={String(temporary)} icon="⏳" />
       </div>
 
       <div className="card p-5">
@@ -129,20 +127,26 @@ export default async function RoteListePage({
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-muted">{entry.reason}</p>
-                  <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-xs text-muted sm:grid-cols-3">
-                    <div>
-                      <dt className="inline">Discord: </dt>
-                      <dd className="inline font-mono text-foreground">{entry.discordId}</dd>
+                  <dl className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-muted">
+                    <div className="flex min-w-0 items-baseline gap-1.5">
+                      <dt className="shrink-0">Discord</dt>
+                      <dd className="min-w-0 break-all font-mono text-foreground">
+                        {entry.discordId}
+                      </dd>
                     </div>
                     {entry.minecraftUuid && (
-                      <div className="sm:col-span-2">
-                        <dt className="inline">UUID: </dt>
-                        <dd className="inline font-mono text-foreground">{entry.minecraftUuid}</dd>
+                      <div className="flex min-w-0 items-baseline gap-1.5">
+                        <dt className="shrink-0">UUID</dt>
+                        <dd className="min-w-0 break-all font-mono text-foreground">
+                          {entry.minecraftUuid}
+                        </dd>
                       </div>
                     )}
-                    <div>
-                      <dt className="inline">Seit: </dt>
-                      <dd className="inline">{entry.blockedAt.toLocaleDateString("de-DE")}</dd>
+                    <div className="flex shrink-0 items-baseline gap-1.5">
+                      <dt>Seit</dt>
+                      <dd className="tabular-nums">
+                        {entry.blockedAt.toLocaleDateString("de-DE")}
+                      </dd>
                     </div>
                   </dl>
                 </div>
