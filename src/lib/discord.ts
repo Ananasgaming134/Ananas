@@ -59,6 +59,10 @@ export const TICKET_CLAIM_ROLE_ID =
  */
 export const ADMIN_ROLE_ID = process.env.DISCORD_ROLE_ADMIN ?? "1541447823025901649";
 
+/** Teamleitung - steht ueber Admin und direkt unter den Ownern. */
+export const TEAMLEITUNG_ROLE_ID =
+  process.env.DISCORD_ROLE_TEAMLEITUNG ?? "1514905388284379217";
+
 /**
  * Rollen mit voller Berechtigung: Owner, Dev und Admin. Enthaelt neben den
  * fest vorgegebenen Rollen auch die Owner-Rolle aus DISCORD_ROLE_OWNER, damit

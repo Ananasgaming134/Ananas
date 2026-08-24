@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import LandingHeader from "@/components/landing/LandingHeader";
+import LandingAmbient from "@/components/landing/LandingAmbient";
 import VoxelField from "@/components/landing/VoxelField";
 import Reveal from "@/components/landing/Reveal";
 import CountUp from "@/components/landing/CountUp";
@@ -130,6 +131,7 @@ export default async function Home() {
 
   return (
     <main className="landing relative">
+      <LandingAmbient />
       <LandingHeader loggedIn={loggedIn} />
 
       {/* ---------------------------------------------------------------- */}
@@ -145,8 +147,7 @@ export default async function Home() {
           <div className="max-w-3xl">
             <span className="badge-live fade-up">
               <span className="badge-dot" />
-              Aktiv auf {SERVER_NAME} · {stats.activeLoans} Item
-              {stats.activeLoans === 1 ? "" : "s"} gerade unterwegs
+              Ausrüstung auf Zeit · aktiv auf {SERVER_NAME}
             </span>
 
             <h1 className="fade-up fade-up-1 mt-6 font-display text-5xl font-extrabold leading-[0.95] tracking-tight sm:text-7xl">
@@ -192,7 +193,7 @@ export default async function Home() {
               label="Warenwert im Regal"
             />
             <StatBand value={<CountUp value={stats.totalQuantity} />} label="Items im Bestand" />
-            <StatBand value={<CountUp value={stats.kundenCount} />} label="Kunden" />
+            <StatBand value={<CountUp value={stats.itemCount} />} label="Item-Arten" />
             <StatBand
               value={
                 reviewSummary.count > 0 ? (
@@ -255,7 +256,7 @@ export default async function Home() {
       {/* Zahlen                                                            */}
       {/* ---------------------------------------------------------------- */}
       <Section id="zahlen" eyebrow="Live-Zahlen" title="Der aktuelle Stand">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <BigStat
             delay={0}
             label="Gesamtwert aller Items"
@@ -264,19 +265,13 @@ export default async function Home() {
           />
           <BigStat
             delay={90}
-            label="Aktuell ausgeliehen"
-            value={String(stats.activeLoans)}
-            hint="laufende Ausleihen in diesem Moment"
+            label="Verschiedene Item-Arten"
+            value={String(stats.itemCount)}
+            hint={`${stats.totalQuantity} Stück insgesamt im Regal`}
             tone="accent-2"
           />
           <BigStat
             delay={180}
-            label="Kunden"
-            value={String(stats.kundenCount)}
-            hint={`${stats.activeMembers} aktive Mitglieder insgesamt`}
-          />
-          <BigStat
-            delay={270}
             label="Im Team"
             value={String(teamCount)}
             hint="Aufsicht und Owner zusammen"

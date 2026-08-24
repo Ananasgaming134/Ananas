@@ -293,11 +293,52 @@ body {
 
 .landing {
   /* Eigener, waermerer Untergrund als im Dashboard - die Startseite soll
-     nach Werkstatt aussehen, nicht nach Aktenschrank. */
+     nach Werkstatt aussehen, nicht nach Aktenschrank. Gemalt wird er von
+     .landing-ambient, damit sich der Hintergrund bewegen kann. */
   --landing-ground: #06070b;
-  background:
-    radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
-    var(--landing-ground);
+  background: transparent;
+}
+
+.landing-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--landing-ground);
+}
+
+.ambient-blob {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(130px);
+}
+.ambient-blob-a {
+  top: -14rem;
+  left: -10rem;
+  height: 40rem;
+  width: 40rem;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.ambient-blob-b {
+  top: 28%;
+  right: -14rem;
+  height: 34rem;
+  width: 34rem;
+  background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+}
+.ambient-blob-c {
+  bottom: -16rem;
+  left: 28%;
+  height: 38rem;
+  width: 38rem;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.ambient-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 0%, var(--landing-ground) 88%);
 }
 
 .section-pad {
@@ -510,7 +551,8 @@ body {
   }
   .headline-accent,
   .headline-accent::after,
-  .badge-dot {
+  .badge-dot,
+  .ambient-blob {
     animation: none;
   }
 }

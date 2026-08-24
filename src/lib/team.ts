@@ -1,5 +1,11 @@
 import { prisma } from "@/lib/prisma";
-import { fetchGuildMembersWithRole, roleIdsFromEnv, type DiscordGuildMember } from "@/lib/discord";
+import {
+  ADMIN_ROLE_ID,
+  TEAMLEITUNG_ROLE_ID,
+  fetchGuildMembersWithRole,
+  roleIdsFromEnv,
+  type DiscordGuildMember,
+} from "@/lib/discord";
 import { MEMBER_STATUS, ROLES } from "@/lib/constants";
 
 export type TeamMember = {
@@ -29,7 +35,10 @@ async function membersFromDb(role: string): Promise<TeamMember[]> {
 }
 
 async function membersFromDiscordRole(envVarName: string): Promise<TeamMember[] | null> {
-  const roleIds = roleIdsFromEnv(envVarName);
+  return membersFromRoleIds(roleIdsFromEnv(envVarName));
+}
+
+async function membersFromRoleIds(roleIds: string[]): Promise<TeamMember[] | null> {
   if (roleIds.length === 0) return null;
 
   const seen = new Set<string>();
@@ -55,24 +64,35 @@ async function membersFromDiscordRole(envVarName: string): Promise<TeamMember[] 
  * beidem, wird die Gruppe einfach weggelassen statt einen Fehler zu zeigen.
  */
 export async function getTeamGroups(): Promise<TeamGroup[]> {
-  const [owner, aufsicht, developerLeitung, developer] = await Promise.all([
+  const [owner, teamleitung, admin, developerLeitung, developer, aufsicht] = await Promise.all([
     membersFromDiscordRole("DISCORD_ROLE_OWNER").then((v) => v ?? membersFromDb(ROLES.OWNER)),
-    membersFromDiscordRole("DISCORD_ROLE_AUFSICHT").then((v) => v ?? membersFromDb(ROLES.AUFSICHT)),
+    membersFromRoleIds([TEAMLEITUNG_ROLE_ID]),
+    membersFromRoleIds([ADMIN_ROLE_ID]),
     membersFromDiscordRole("DISCORD_ROLE_DEVELOPER_LEITUNG"),
     membersFromDiscordRole("DISCORD_ROLE_DEVELOPER"),
+    membersFromDiscordRole("DISCORD_ROLE_AUFSICHT").then((v) => v ?? membersFromDb(ROLES.AUFSICHT)),
   ]);
 
-  const groups: TeamGroup[] = [
-    { key: "owner", label: "Owner", members: owner },
-    { key: "aufsicht", label: "Aufsichtspersonen", members: aufsicht },
+  // Reihenfolge von oben nach unten. Wer mehrere Rollen traegt, erscheint nur
+  // einmal - bei der hoechsten, die zuerst kommt.
+  const rangfolge: TeamGroup[] = [
+    { key: "owner", label: "Owner", members: owner ?? [] },
+    { key: "teamleitung", label: "Teamleitung", members: teamleitung ?? [] },
+    { key: "admin", label: "Admins", members: admin ?? [] },
+    { key: "dev-leitung", label: "Developer-Leitung", members: developerLeitung ?? [] },
+    { key: "developer", label: "Developer", members: developer ?? [] },
+    { key: "aufsicht", label: "Aufsichtspersonen", members: aufsicht ?? [] },
   ];
 
-  if (developerLeitung && developerLeitung.length > 0) {
-    groups.push({ key: "dev-leitung", label: "Developer-Leitung", members: developerLeitung });
-  }
-  if (developer && developer.length > 0) {
-    groups.push({ key: "developer", label: "Developer", members: developer });
-  }
-
-  return groups.filter((g) => g.members.length > 0);
+  const bereitsGezeigt = new Set<string>();
+  return rangfolge
+    .map((group) => ({
+      ...group,
+      members: group.members.filter((m) => {
+        if (bereitsGezeigt.has(m.discordId)) return false;
+        bereitsGezeigt.add(m.discordId);
+        return true;
+      }),
+    }))
+    .filter((g) => g.members.length > 0);
 }
