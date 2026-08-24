@@ -41,6 +41,7 @@ import {
   BORROW_PREFIX,
   CATEGORY_ITEM_SELECT_ID,
   CATEGORY_PAGE_PREFIX,
+  CHANNEL_ITEM_SELECT_ID,
   FORCE_RETURN_PREFIX,
   ITEM_SEARCH_MODAL_ID,
   ITEM_SEARCH_PAGE_PREFIX,
@@ -458,6 +459,14 @@ async function handleComponent(interaction: DiscordInteractionPayload) {
       type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
       data: { ...payload, flags: EPHEMERAL },
     });
+  }
+
+  // Auswahl in einem oeffentlichen Kategorie-Kanal: IMMER eine neue,
+  // ephemere Antwort - sonst wuerde das Panel selbst ueberschrieben.
+  if (customId === CHANNEL_ITEM_SELECT_ID) {
+    const itemId: string | undefined = interaction.data?.values?.[0];
+    if (!itemId) return ephemeral("Kein Item ausgewählt.");
+    return respondWithItemActions(itemId, interaction.guild_id, memberRoles, discordUser, false);
   }
 
   if (customId === CATEGORY_ITEM_SELECT_ID) {

@@ -3,7 +3,11 @@ import { WORTKETTEN_CHANNEL_ID } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
 import { processWordChainAttempt } from "@/lib/wordChain";
 import { roleIdsFromEnv } from "@/lib/discord";
-import { revokeAccessAndRole, startGracePeriodIfNeeded } from "@/lib/accessControl";
+import {
+  revokeAccessAndRole,
+  startGracePeriodIfNeeded,
+  syncMemberRoleFromDiscord,
+} from "@/lib/accessControl";
 import { ensureMemberFromDiscordUser } from "@/lib/discordInteractions";
 
 const globalForGateway = globalThis as unknown as { discordGatewayClient?: Client };
@@ -77,15 +81,27 @@ async function handleMessage(message: {
  */
 async function handleMemberRoleUpdate(oldMember: GuildMember | PartialGuildMember, newMember: GuildMember) {
   const kundeRoleIds = roleIdsFromEnv("DISCORD_ROLE_KUNDE");
-  if (kundeRoleIds.length === 0) return;
-  const staffRoleIds = [...roleIdsFromEnv("DISCORD_ROLE_OWNER"), ...roleIdsFromEnv("DISCORD_ROLE_AUFSICHT")];
+  const ownerRoleIds = roleIdsFromEnv("DISCORD_ROLE_OWNER");
+  const aufsichtRoleIds = roleIdsFromEnv("DISCORD_ROLE_AUFSICHT");
+  const relevant = [...kundeRoleIds, ...ownerRoleIds, ...aufsichtRoleIds];
+  if (relevant.length === 0) return;
 
-  const hadRole = oldMember.roles?.cache.some((r) => kundeRoleIds.includes(r.id)) ?? false;
-  const hasRole = newMember.roles.cache.some((r) => kundeRoleIds.includes(r.id));
-  const hasStaffRole = newMember.roles.cache.some((r) => staffRoleIds.includes(r.id));
+  const before = oldMember.roles?.cache.map((r) => r.id) ?? [];
+  const after = newMember.roles.cache.map((r) => r.id);
 
-  if (!hadRole && hasRole) {
-    try {
+  // Nur reagieren, wenn sich an den LeihCenter-Rollen wirklich etwas geaendert
+  // hat - andere Rollen (VIP, Farben, ...) sind fuer uns belanglos.
+  const relevantBefore = before.filter((r) => relevant.includes(r)).sort().join(",");
+  const relevantAfter = after.filter((r) => relevant.includes(r)).sort().join(",");
+  if (relevantBefore === relevantAfter) return;
+
+  const hadKunde = before.some((r) => kundeRoleIds.includes(r));
+  const hasKunde = after.some((r) => kundeRoleIds.includes(r));
+  const hasAny = relevantAfter.length > 0;
+
+  try {
+    // Kunde-Rolle NEU: Datensatz sicherstellen und Zahlungsfrist starten.
+    if (!hadKunde && hasKunde) {
       const member = await ensureMemberFromDiscordUser({
         id: newMember.user.id,
         username: newMember.user.username,
@@ -94,25 +110,32 @@ async function handleMemberRoleUpdate(oldMember: GuildMember | PartialGuildMembe
       });
       await startGracePeriodIfNeeded(member.id);
       console.log(`[gateway] Kunde-Rolle fuer ${newMember.user.username} vergeben - Zahlungsfrist laeuft.`);
-    } catch (err) {
-      console.error("[gateway] Konnte Member bei Rollenvergabe nicht anlegen:", err);
+      return;
     }
-    return;
-  }
 
-  if (hadRole && !hasRole && !hasStaffRole) {
-    try {
-      const member = await prisma.member.findUnique({ where: { discordId: newMember.user.id } });
-      if (!member) return;
+    const member = await prisma.member.findUnique({ where: { discordId: newMember.user.id } });
+    if (!member) return;
+
+    // Gar keine LeihCenter-Rolle mehr -> Zugang sofort sperren.
+    if (!hasAny) {
       await revokeAccessAndRole(
         member,
-        "Die Kunden-Rolle wurde auf Discord entfernt.",
+        "Die LeihCenter-Rolle wurde auf Discord entfernt.",
         "ACCESS_REVOKED_ROLE_REMOVED"
       );
-      console.log(`[gateway] Kunde-Rolle bei ${newMember.user.username} entfernt - Zugang gesperrt.`);
-    } catch (err) {
-      console.error("[gateway] Konnte Zugang bei Rollenentzug nicht sperren:", err);
+      console.log(`[gateway] Alle Rollen bei ${newMember.user.username} entfernt - Zugang gesperrt.`);
+      return;
     }
+
+    // Sonst: Stufe neu bestimmen (z.B. Owner -> Kunde nach Herabstufung).
+    // syncMemberRoleFromDiscord aktualisiert den Datensatz und macht damit
+    // eine noch offene Sitzung beim naechsten Klick ungueltig.
+    const status = await syncMemberRoleFromDiscord(member);
+    if (status === "changed") {
+      console.log(`[gateway] Rolle von ${newMember.user.username} geaendert - Neuanmeldung noetig.`);
+    }
+  } catch (err) {
+    console.error("[gateway] Rollenaenderung konnte nicht verarbeitet werden:", err);
   }
 }
 

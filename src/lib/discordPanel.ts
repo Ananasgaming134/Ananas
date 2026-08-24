@@ -12,6 +12,7 @@ import { LOAN_STATUS, SITE_NAME } from "@/lib/constants";
 import {
   CATEGORY_ITEM_SELECT_ID,
   CATEGORY_PAGE_PREFIX,
+  CHANNEL_ITEM_SELECT_ID,
   ITEM_SEARCH_PAGE_PREFIX,
   ITEM_SEARCH_SELECT_ID,
   NO_CATEGORY_VALUE,
@@ -857,7 +858,7 @@ async function buildCategoryChannelMessages(
         components: [
           {
             type: 3,
-            custom_id: CATEGORY_ITEM_SELECT_ID,
+            custom_id: CHANNEL_ITEM_SELECT_ID,
             placeholder: `${category.label} — Item auswählen…`.slice(0, 150),
             options: pageItems.map((item) => ({
               label: `${item.unavailable ? "⛔" : availabilityIcon(item.free, item.quantityTotal)} ${item.name}`.slice(0, 100),
@@ -974,7 +975,12 @@ export async function syncCategoryChannels(): Promise<CategorySyncResult> {
     }
 
     const payloads = await buildCategoryChannelMessages(live);
+    const hash = hashPayload(payloads);
     const oldIds = (dbCategory.panelMessageIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
+    // Inhalt unveraendert und alle Nachrichten noch da -> nichts zu tun.
+    if (dbCategory.panelHash === hash && oldIds.length === payloads.length) continue;
+
     const newIds: string[] = [];
 
     for (let i = 0; i < payloads.length; i++) {
@@ -993,13 +999,11 @@ export async function syncCategoryChannels(): Promise<CategorySyncResult> {
       await deleteMessage(channelId, stale);
     }
 
-    if (newIds.join(",") !== oldIds.join(",")) {
-      await prisma.category.update({
-        where: { id: dbCategory.id },
-        data: { panelMessageIds: newIds.join(",") },
-      });
-      result.updated += 1;
-    }
+    await prisma.category.update({
+      where: { id: dbCategory.id },
+      data: { panelMessageIds: newIds.join(","), panelHash: hash },
+    });
+    result.updated += 1;
   }
 
   return result;

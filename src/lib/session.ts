@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { isStillAuthorized } from "@/lib/accessControl";
+import { syncMemberRoleFromDiscord } from "@/lib/accessControl";
 import { hasAtLeastRole, MEMBER_STATUS, type RoleValue } from "@/lib/constants";
 
 export async function getSessionMember() {
@@ -40,7 +40,16 @@ export async function requireMember(minRole?: RoleValue) {
   const member = await prisma.member.findUnique({ where: { id: session.user.memberId! } });
   if (!member || member.status !== MEMBER_STATUS.ACTIVE) redirect("/login");
 
-  if (!(await isStillAuthorized(member))) redirect("/login?grund=rolle-entzogen");
+  // Live-Abgleich mit Discord bei JEDEM Aufruf (kurz gecacht). Wer die Rolle
+  // verliert, fliegt sofort raus; wer herabgestuft wird, muss sich neu
+  // anmelden - sonst behielte ein offener Tab die alten Rechte.
+  const roleStatus = await syncMemberRoleFromDiscord(member);
+  if (roleStatus === "revoked") redirect("/login?grund=rolle-entzogen");
+  if (roleStatus === "changed") redirect("/login?grund=rolle-geaendert");
+
+  // Sitzung kann eine veraltete Rolle tragen (z.B. Herabstufung waehrend die
+  // App nicht lief) - dann gilt die aus der Datenbank, nicht die aus dem Token.
+  if (minRole && !hasAtLeastRole(member.role, minRole)) redirect("/dashboard");
 
   return member;
 }

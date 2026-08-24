@@ -13,6 +13,13 @@ import {
 export const PANEL_SELECT_ID = "leihcenter_select_item";
 export const PANEL_CATEGORY_SELECT_ID = "leihcenter_select_category";
 export const CATEGORY_ITEM_SELECT_ID = "leihcenter_select_item_in_category";
+/**
+ * Auswahlmenue in den OEFFENTLICHEN Kategorie-Kanaelen. Bewusst eine eigene
+ * ID: die Antwort darauf muss eine NEUE (nur fuer den Klickenden sichtbare)
+ * Nachricht sein. Wuerde hier CATEGORY_ITEM_SELECT_ID stehen, wuerde die
+ * Antwort die Panel-Nachricht selbst ueberschreiben - das Panel waere weg.
+ */
+export const CHANNEL_ITEM_SELECT_ID = "leihcenter_select_item_in_channel";
 export const BORROW_PREFIX = "leihcenter_borrow:";
 export const RETURN_PREFIX = "leihcenter_return:";
 /** Ausbuchen einer FREMDEN Ausleihe durch Aufsicht/Owner ("/ausleihen"). */

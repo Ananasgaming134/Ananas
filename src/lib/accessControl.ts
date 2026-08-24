@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import {
   DISCORD_GUILD_ID,
+  checkRoleLive,
   revokeGuildRole,
   roleIdsFromEnv,
   sendDiscordDirectMessage,
@@ -288,8 +289,8 @@ export async function enforceAccessRules(): Promise<EnforceResult> {
 // Seitenaufruf eine Discord-API-Abfrage ausloesen. 20s ist kurz genug, dass
 // ein Rollenentzug praktisch sofort greift (der Gateway-Handler reagiert
 // ohnehin in Echtzeit), und lang genug, um Rate-Limits zu vermeiden.
-const ROLE_CACHE_MS = 20_000;
-const roleCheckCache = new Map<string, { until: number; allowed: boolean }>();
+const ROLE_CACHE_MS = 15_000;
+const roleCheckCache = new Map<string, { until: number; status: RoleSyncStatus }>();
 
 /**
  * Serverseitige Dauerpruefung fuer jeden Seitenaufruf (siehe requireMember):
@@ -299,29 +300,62 @@ const roleCheckCache = new Map<string, { until: number; allowed: boolean }>();
  * niemanden aussperrt.
  */
 export async function isStillAuthorized(member: Member): Promise<boolean> {
-  const kundeRoleIds = roleIdsFromEnv("DISCORD_ROLE_KUNDE");
-  if (!DISCORD_GUILD_ID || kundeRoleIds.length === 0) return true;
+  return (await syncMemberRoleFromDiscord(member)) === "ok";
+}
+
+export type RoleSyncStatus =
+  | "ok" // Rolle unveraendert, Zugang bleibt
+  | "changed" // Rolle hat sich geaendert (z.B. Owner -> Kunde) - Neuanmeldung noetig
+  | "revoked" // gar keine LeihCenter-Rolle mehr - Zugang gesperrt
+  | "unknown"; // Discord nicht erreichbar - nichts anfassen
+
+/**
+ * Gleicht die Rolle einer Person live mit Discord ab. Deckt beide Faelle ab:
+ *
+ * - **Rolle ganz weg** (Server verlassen oder alle Rollen entzogen): Zugang
+ *   wird gesperrt.
+ * - **Rolle geaendert** (z.B. Owner verliert Owner und ist nur noch Kunde):
+ *   der Datensatz wird sofort angepasst und die Sitzung fuer ungueltig
+ *   erklaert - sonst behielte ein Herabgestufter seine alten Rechte, bis er
+ *   sich zufaellig abmeldet.
+ *
+ * Ist Discord nicht erreichbar, wird bewusst NICHT ausgesperrt.
+ */
+export async function syncMemberRoleFromDiscord(member: Member): Promise<RoleSyncStatus> {
+  if (!DISCORD_GUILD_ID || !process.env.DISCORD_BOT_TOKEN) return "ok";
 
   const cached = roleCheckCache.get(member.discordId);
-  if (cached && cached.until > Date.now()) return cached.allowed;
+  if (cached && cached.until > Date.now()) return cached.status;
 
-  const stillHasRole = await memberStillHasKundeRole(member.discordId, kundeRoleIds);
-  if (stillHasRole === null) return true; // Pruefung fehlgeschlagen - nicht aussperren
+  const result = await checkRoleLive(member.discordId);
+  if (result.status === "error") return "unknown";
 
-  roleCheckCache.set(member.discordId, {
-    until: Date.now() + ROLE_CACHE_MS,
-    allowed: stillHasRole,
-  });
-
-  if (!stillHasRole) {
+  if (result.status === "revoked") {
+    roleCheckCache.set(member.discordId, { until: Date.now() + ROLE_CACHE_MS, status: "revoked" });
     await revokeAccessAndRole(
       member,
-      "Die Kunden-Rolle wurde auf Discord entfernt.",
+      "Die LeihCenter-Rolle wurde auf Discord entfernt.",
       "ACCESS_REVOKED_ROLE_REMOVED"
     );
-    return false;
+    return "revoked";
   }
-  return true;
+
+  if (result.role !== member.role) {
+    // Rechte sofort anpassen, damit auch ein noch offener Tab nichts mehr
+    // darf, was der neuen Rolle nicht zusteht.
+    await prisma.member.update({ where: { id: member.id }, data: { role: result.role } });
+    await logAction({
+      targetId: member.id,
+      action: "ROLE_AUTO_CHANGED",
+      details: `Rolle auf Discord geändert (${member.role} → ${result.role}). Neuanmeldung erforderlich.`,
+    });
+    // Nicht cachen: der naechste Aufruf soll den frischen Stand sehen.
+    roleCheckCache.delete(member.discordId);
+    return "changed";
+  }
+
+  roleCheckCache.set(member.discordId, { until: Date.now() + ROLE_CACHE_MS, status: "ok" });
+  return "ok";
 }
 
 /**

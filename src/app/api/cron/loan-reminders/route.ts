@@ -4,6 +4,7 @@ import { autoCloseExpiredCloseRequests } from "@/lib/tickets";
 import { sendGraceReminders } from "@/lib/accessControl";
 import { sendExpiryNotices } from "@/lib/subscriptions";
 import { expireBlacklistEntries } from "@/lib/blacklist";
+import { syncCategoryChannels } from "@/lib/discordPanel";
 import { processLoanReminders } from "@/lib/loanReminders";
 import { postSubscriptionReminders } from "@/lib/subscriptions";
 import { syncMinecraftNames } from "@/lib/verification";
@@ -53,7 +54,12 @@ export async function GET(request: Request) {
   let subscriptions: unknown = "übersprungen";
   let nameSync: unknown = "übersprungen";
 
+  let categoryChannels: unknown = "übersprungen";
+
   if (hourly) {
+    // Selbstheilung: geloeschte oder veraltete Panel-Nachrichten in den
+    // Kategorie-Kanaelen werden hier wieder hergestellt.
+    categoryChannels = await syncCategoryChannels().catch((err) => ({ error: String(err) }));
     subscriptions = await postSubscriptionReminders().catch((err) => ({ ok: false, error: String(err) }));
     nameSync = await syncMinecraftNames().catch((err) => ({ error: String(err) }));
   }
@@ -66,6 +72,7 @@ export async function GET(request: Request) {
     graceReminders,
     expiryNotices,
     blacklistExpiry,
+    categoryChannels,
     subscriptions,
     nameSync,
   });

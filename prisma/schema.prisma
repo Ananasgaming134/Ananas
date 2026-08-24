@@ -217,6 +217,9 @@ model Category {
   // Kommagetrennte Message-IDs des Panels in diesem Kanal (mehrere, falls die
   // Kategorie mehr als 25 Items hat).
   panelMessageIds  String?
+  // Pruefsumme des zuletzt gesendeten Panel-Inhalts: unveraenderte Kanaele
+  // werden gar nicht erst angefasst (spart Discord-Aufrufe und Rate-Limit).
+  panelHash        String?
 
   items     Item[]
 }
