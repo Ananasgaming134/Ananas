@@ -66,6 +66,8 @@ const VERWALTUNG_GROUPS: NavGroup[] = [
       { href: "/dashboard/verwaltung/zahlungen", label: "Zahlungen", icon: "💰" },
       { href: "/dashboard/verwaltung/logs", label: "Logs", icon: "📜" },
       { href: "/dashboard/verwaltung/regelwerk", label: "Regelwerk", icon: "📗", minRole: ROLES.OWNER },
+      { href: "/dashboard/verwaltung/kooperationen", label: "Kooperationen", icon: "🤝", minRole: ROLES.OWNER },
+      { href: "/dashboard/verwaltung/impressum", label: "Impressum", icon: "⚖️", minRole: ROLES.OWNER },
       { href: "/dashboard/verwaltung/bot", label: "Discord-Server", icon: "🤖", minRole: ROLES.OWNER },
     ],
   },

@@ -6,10 +6,13 @@ import VoxelField from "@/components/landing/VoxelField";
 import Reveal from "@/components/landing/Reveal";
 import CountUp from "@/components/landing/CountUp";
 import ReviewMarquee from "@/components/landing/ReviewMarquee";
+import PartnerCarousel from "@/components/landing/PartnerCarousel";
 import FaqAccordion from "@/components/FaqAccordion";
 import { getPublicStats } from "@/lib/stats";
 import { getTeamGroups } from "@/lib/team";
 import { getPublicReviews, getReviewSummary } from "@/lib/reviews";
+import { getPublicPartners } from "@/lib/partners";
+import { getDiscordInvite } from "@/lib/siteConfig";
 import {
   AUTH_DISCORD_SERVER_NAME,
   SERVER_NAME,
@@ -113,13 +116,16 @@ const VORTEILE = [
 ] as const;
 
 export default async function Home() {
-  const [session, stats, teamGroups, reviews, reviewSummary] = await Promise.all([
-    auth(),
-    getPublicStats(),
-    getTeamGroups(),
-    getPublicReviews(),
-    getReviewSummary(),
-  ]);
+  const [session, stats, teamGroups, reviews, reviewSummary, partners, discordInvite] =
+    await Promise.all([
+      auth(),
+      getPublicStats(),
+      getTeamGroups(),
+      getPublicReviews(),
+      getReviewSummary(),
+      getPublicPartners(),
+      getDiscordInvite(),
+    ]);
   const loggedIn = !!session?.user?.memberId;
   const teamCount = teamGroups.reduce((sum, g) => sum + g.members.length, 0);
 
@@ -385,6 +391,17 @@ export default async function Home() {
       {/* ---------------------------------------------------------------- */}
       {/* Fragen                                                            */}
       {/* ---------------------------------------------------------------- */}
+      {partners.length > 0 && (
+        <Section
+          id="kooperationen"
+          eyebrow="Kooperationen"
+          title="Mit wem wir zusammenarbeiten"
+          description="Ein Klick auf eine Karte führt direkt zum Discord des Partners."
+        >
+          <PartnerCarousel partners={partners} />
+        </Section>
+      )}
+
       <Section id="fragen" eyebrow="Fragen" title="Was oft gefragt wird" narrow>
         <FaqAccordion items={[...FAQ]} />
       </Section>
@@ -400,15 +417,25 @@ export default async function Home() {
                 Bereit für die nächste Runde?
               </h2>
               <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted">
-                Melde dich mit Discord an. Hast du die Rolle noch nicht, kannst du dich direkt bei
-                uns bewerben — das dauert keine zwei Minuten.
+                Alles läuft über unseren Discord: Rolle holen, anmelden, ausleihen. Hast du die
+                Rolle noch nicht, kannst du dich direkt bei uns bewerben — das dauert keine zwei
+                Minuten.
               </p>
               <div className="mt-7 flex flex-wrap gap-3">
-                <Link href={loggedIn ? "/dashboard" : "/login"} className="btn-primary">
-                  {loggedIn ? "Zum Dashboard" : "Mit Discord anmelden"}
+                <a
+                  href={discordInvite}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary"
+                >
+                  <DiscordLogo />
+                  Discord beitreten
                   <span aria-hidden className="btn-arrow">
                     →
                   </span>
+                </a>
+                <Link href={loggedIn ? "/dashboard" : "/login"} className="btn-ghost">
+                  {loggedIn ? "Zum Dashboard" : "Mit Discord anmelden"}
                 </Link>
                 <Link href="/bewerbung" className="btn-ghost">
                   Bewerben
@@ -429,6 +456,25 @@ export default async function Home() {
             Eigenständiger Item-Verleih, aktiv auf {SERVER_NAME} — nicht der offizielle
             Serverbetreiber.
           </p>
+          <nav className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+            <Link href="/impressum" className="transition hover:text-foreground">
+              Impressum
+            </Link>
+            <Link href="/datenschutz" className="transition hover:text-foreground">
+              Datenschutz
+            </Link>
+            <Link href="/dashboard/regelwerk" className="transition hover:text-foreground">
+              Regelwerk
+            </Link>
+            <a
+              href={discordInvite}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition hover:text-foreground"
+            >
+              Discord
+            </a>
+          </nav>
         </div>
       </footer>
     </main>
@@ -529,5 +575,13 @@ function PlanPoint({ children }: { children: React.ReactNode }) {
       </span>
       <span>{children}</span>
     </li>
+  );
+}
+
+function DiscordLogo() {
+  return (
+    <svg viewBox="0 0 24 18" width="18" height="14" fill="currentColor" aria-hidden>
+      <path d="M20.317 1.492A19.79 19.79 0 0 0 15.432 0c-.21.375-.455.88-.623 1.28a18.27 18.27 0 0 0-5.487 0A12.6 12.6 0 0 0 8.69 0 19.736 19.736 0 0 0 3.8 1.495C.72 6.045-.116 10.48.302 14.853a19.9 19.9 0 0 0 6.033 3.04c.486-.66.92-1.362 1.293-2.1a12.9 12.9 0 0 1-2.037-.977c.171-.125.338-.255.5-.389a14.2 14.2 0 0 0 12.02 0c.163.135.33.265.5.39-.65.383-1.334.71-2.04.977.374.738.807 1.44 1.293 2.1a19.85 19.85 0 0 0 6.037-3.04c.5-5.08-.838-9.47-3.584-13.362ZM8.02 12.33c-1.183 0-2.157-1.085-2.157-2.42 0-1.333.955-2.42 2.157-2.42 1.21 0 2.176 1.096 2.157 2.42 0 1.335-.955 2.42-2.157 2.42Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.42 0-1.333.955-2.42 2.157-2.42 1.21 0 2.176 1.096 2.157 2.42 0 1.335-.947 2.42-2.157 2.42Z" />
+    </svg>
   );
 }

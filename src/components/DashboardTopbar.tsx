@@ -32,6 +32,8 @@ const ROUTE_TITLES: RouteTitle[] = [
   { path: "/dashboard/verwaltung/bot", title: "Discord-Server" },
   { path: "/dashboard/verwaltung/rote-liste", title: "Rote Liste" },
   { path: "/dashboard/verwaltung/ausleihen", title: "Derzeit ausgeliehen" },
+  { path: "/dashboard/verwaltung/kooperationen", title: "Kooperationen" },
+  { path: "/dashboard/verwaltung/impressum", title: "Impressum" },
   { path: "/dashboard/verwaltung/regelwerk", title: "Regelwerk" },
   { path: "/dashboard/verwaltung", title: "Verwaltung", exact: true },
 ];

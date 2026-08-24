@@ -541,3 +541,33 @@ model PlanChangeRequest {
   @@index([memberId])
   @@index([status])
 }
+
+/// Kooperationspartner - die Visitenkarten auf der Startseite. Werden in der
+/// Verwaltung gepflegt; Banner und Profilbild sind eigene Uploads.
+model Partner {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  discordUrl  String?
+  bannerUrl   String?
+  avatarUrl   String?
+  sortOrder   Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([active, sortOrder])
+}
+
+/// Einstellungen der oeffentlichen Seite, die ohne Neuveroeffentlichung
+/// aenderbar sein muessen (Impressum, Einladungslink). Genau ein Datensatz.
+model SiteConfig {
+  id                String   @id @default(cuid())
+  key               String   @unique @default("default")
+  impressum         String   @default("")
+  datenschutz       String   @default("")
+  discordInviteUrl  String   @default("")
+  updatedById       String?
+  updatedAt         DateTime @updatedAt
+  createdAt         DateTime @default(now())
+}
