@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import PlanChangeRequestForm from "@/components/PlanChangeRequestForm";
-import PlanPurchaseForm from "@/components/PlanPurchaseForm";
+import PlanCard from "@/components/PlanCard";
 import GraceCountdown from "@/components/GraceCountdown";
 import { SUBSCRIPTION_PLANS, formatCoins } from "@/lib/constants";
 
@@ -12,12 +12,6 @@ export default async function AboPage() {
     where: { memberId: member.id, status: "PENDING" },
   });
 
-  const INCLUDED_FEATURES = [
-    "Zugriff auf den kompletten Item-Bestand",
-    "Ausleihen sowohl über die Website als auch direkt in Discord",
-    "Automatische Zahlungs-Zuordnung per Verwendungszweck",
-    "Pausieren jederzeit über ein Support-Ticket möglich",
-  ];
 
   return (
     <div className="space-y-6">
@@ -52,58 +46,28 @@ export default async function AboPage() {
 
       <div className="grid grid-cols-1 gap-5 pt-3 sm:grid-cols-3">
         {SUBSCRIPTION_PLANS.map((plan, i) => {
-          const monthlyRate = plan.price / plan.months;
-          const baseMonthlyRate = SUBSCRIPTION_PLANS[0].price / SUBSCRIPTION_PLANS[0].months;
-          const savingsPct = Math.round((1 - monthlyRate / baseMonthlyRate) * 100);
-          const isBestValue = plan.id === SUBSCRIPTION_PLANS[SUBSCRIPTION_PLANS.length - 1].id;
-          const isCurrent = member.subscriptionPlan === plan.id;
-
+          const proMonat = plan.price / plan.months;
+          const basis = SUBSCRIPTION_PLANS[0].price / SUBSCRIPTION_PLANS[0].months;
           return (
-            // Aeusserer Rahmen OHNE overflow-hidden: das "Beliebt"-Band ragt
-            // bewusst ueber den Kartenrand hinaus und wurde vorher von der
-            // Karte selbst abgeschnitten.
-            <div key={plan.id} className={`fade-up fade-up-${i + 1} relative`}>
-              {isBestValue && (
-                <span className="absolute -top-2.5 right-5 z-10 rounded-full bg-accent px-2.5 py-0.5 text-[10px] font-semibold text-black shadow-md">
-                  ⭐ Beliebt
-                </span>
-              )}
-              <div
-                className={`card-hover relative h-full overflow-hidden rounded-2xl border p-6 ${
-                  isBestValue
-                    ? "border-accent/60 bg-gradient-to-b from-accent/10 via-surface to-surface shadow-[0_0_40px_-12px_var(--accent)]"
-                    : "border-border bg-surface"
-                }`}
-              >
-              {isBestValue && <div className="gradient-top-bar" />}
-              {isCurrent && (
-                <span className="mb-2 inline-block rounded-full border border-accent-2/40 bg-accent-2/10 px-2.5 py-0.5 text-[10px] font-medium text-accent-2">
-                  ✓ Dein aktuelles Paket
-                </span>
-              )}
-              <p className="text-base font-semibold">{plan.label}</p>
-              <p className="mt-3 text-3xl font-bold tracking-tight text-accent">{formatCoins(plan.price)}</p>
-              <p className="mt-1 text-xs text-muted">
-                {formatCoins(Math.round(monthlyRate))} / Monat
-                {savingsPct > 0 && (
-                  <span className="ml-1.5 rounded-full bg-accent-2/15 px-1.5 py-0.5 font-medium text-accent-2">
-                    -{savingsPct}%
-                  </span>
-                )}
-              </p>
-              <ul className="mt-5 space-y-2 border-t border-border pt-4 text-xs text-muted">
-                {INCLUDED_FEATURES.map((f) => (
-                  <li key={f} className="flex items-start gap-2">
-                    <span className="mt-0.5 text-accent-2">✓</span>
-                    <span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-              </div>
-            </div>
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              index={i}
+              balance={member.balance}
+              currentPlanId={member.subscriptionPlan}
+              hatAbo={Boolean(member.subscriptionPlan)}
+              hervorgehoben={plan.id === SUBSCRIPTION_PLANS[SUBSCRIPTION_PLANS.length - 1].id}
+              ersparnis={Math.round((1 - proMonat / basis) * 100)}
+            />
           );
         })}
       </div>
+
+      <p className="fade-up text-center text-xs text-muted sm:text-left">
+        Reicht dein Guthaben, wird der Betrag sofort abgebucht und die Laufzeit verlängert. Eine
+        laufende Restzeit bleibt erhalten — das neue Paket kommt hinten dran. Ein Wechsel auf einen
+        anderen Tarif ist jederzeit möglich.
+      </p>
 
       <div className="fade-up card space-y-3 p-5">
         <h2 className="text-sm font-semibold">So funktioniert die Bezahlung</h2>
@@ -112,8 +76,8 @@ export default async function AboPage() {
           <span className="font-mono text-foreground">BC-584289</span> mit dem Verwendungszweck{" "}
           <span className="font-mono text-foreground">Verleih {member.customerNumber ?? "-"}</span> (deine
           Kundennummer). Der Betrag wird als <span className="text-foreground">Guthaben</span> auf
-          deinem Konto gutgeschrieben und bleibt dort dauerhaft hinterlegt — die Aufsicht bucht
-          davon dein gewünschtes Paket ab, sobald genug Guthaben da ist. Eine Rücküberweisung ist
+          deinem Konto gutgeschrieben und bleibt dort dauerhaft hinterlegt — davon buchst du dann
+          oben selbst dein Paket. Eine Rücküberweisung ist
           nicht möglich; Guthaben verfällt nur bei einem Ausschluss wegen Regelverstoß.
         </p>
         <div className="rounded-lg border border-accent/30 bg-accent/5 p-4">
@@ -135,22 +99,6 @@ export default async function AboPage() {
           </Link>
           .
         </p>
-      </div>
-
-      <div className="fade-up card space-y-3 p-5">
-        <h2 className="text-sm font-semibold">
-          {member.subscriptionPlan ? "Abo verlängern oder Tarif wechseln" : "Abo abschließen"}
-        </h2>
-        <p className="text-sm text-muted">
-          Wähle dein Paket — auch ein anderer Tarif als bisher ist möglich. Reicht dein Guthaben,
-          wird der Betrag sofort abgebucht und die Laufzeit verlängert. Eine laufende Restzeit
-          bleibt dabei erhalten, das neue Paket wird hinten drangehängt.
-        </p>
-        <PlanPurchaseForm
-          plans={SUBSCRIPTION_PLANS}
-          currentPlanId={member.subscriptionPlan}
-          balance={member.balance}
-        />
       </div>
 
       <div className="fade-up card space-y-3 p-5">
