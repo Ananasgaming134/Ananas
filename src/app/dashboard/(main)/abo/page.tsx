@@ -20,9 +20,12 @@ export default async function AboPage() {
           <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
           Angebote
         </p>
-        <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Wähle dein Paket</h1>
+        <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">
+          {member.subscriptionPlan ? "Abo verlängern" : "Wähle dein Paket"}
+        </h1>
         <p className="mt-2 text-sm text-muted">
-          Je länger die Laufzeit, desto günstiger pro Monat — jederzeit wechselbar.
+          Je länger die Laufzeit, desto günstiger pro Monat. Die gewählte Dauer kommt immer oben
+          auf deine bestehende Laufzeit drauf.
         </p>
         <div className="mt-4 inline-flex items-center gap-4 rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/15 via-surface to-surface px-6 py-4 shadow-[0_8px_30px_-12px_var(--accent)]">
           <span className="icon-badge h-12 w-12 shrink-0 text-2xl">💰</span>
@@ -64,9 +67,9 @@ export default async function AboPage() {
       </div>
 
       <p className="fade-up text-center text-xs text-muted sm:text-left">
-        Reicht dein Guthaben, wird der Betrag sofort abgebucht und die Laufzeit verlängert. Eine
-        laufende Restzeit bleibt erhalten — das neue Paket kommt hinten dran. Ein Wechsel auf einen
-        anderen Tarif ist jederzeit möglich.
+        Du wechselst nie dein Abo — du verlängerst es. Die gewählte Dauer wird oben auf deine
+        laufende Zeit draufgerechnet, egal welches Paket du nimmst. Reicht dein Guthaben, wird der
+        Betrag sofort abgebucht.
       </p>
 
       <div className="fade-up card space-y-3 p-5">

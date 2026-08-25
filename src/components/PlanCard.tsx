@@ -42,14 +42,15 @@ export default function PlanCard({
   const fehlt = plan.price - balance;
   const proMonat = Math.round(plan.price / plan.months);
 
+  // Wer schon ein Paket hat, wechselt nichts - die gewaehlte Dauer kommt
+  // oben auf die laufende Zeit drauf. Deshalb heisst es hier immer
+  // "verlaengern", egal welches Paket man nimmt.
   const knopfText = pending
     ? "Wird gebucht..."
     : !reicht
       ? `Es fehlen ${formatCoins(fehlt)}`
       : hatAbo
-        ? aktuell
-          ? "Verlängern"
-          : "Auf dieses Paket wechseln"
+        ? `Um ${plan.label} verlängern`
         : "Jetzt buchen";
 
   return (
@@ -75,7 +76,7 @@ export default function PlanCard({
 
         {aktuell && (
           <span className="mb-2 inline-block self-start rounded-full border border-accent-2/40 bg-accent-2/10 px-2.5 py-0.5 text-[10px] font-medium text-accent-2">
-            ✓ Dein aktuelles Paket
+            ✓ Zuletzt gebucht
           </span>
         )}
 
@@ -121,7 +122,7 @@ export default function PlanCard({
           {state?.error && <p className="mt-2 text-xs text-danger">❌ {state.error}</p>}
           {state?.ok && (
             <p className="mt-2 text-xs text-accent-2">
-              ✅ Gebucht — der Betrag wurde vom Guthaben abgezogen.
+              ✅ {hatAbo ? "Verlängert" : "Gebucht"} — der Betrag wurde vom Guthaben abgezogen.
             </p>
           )}
         </div>

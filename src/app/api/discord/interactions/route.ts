@@ -1271,7 +1271,7 @@ function respondWithRenewSelect(member: { balance: number; feePaidUntil: Date | 
       label: `${plan.label} — ${formatCoins(plan.price)}`,
       value: plan.id,
       description: affordable
-        ? `Läuft dann bis ${end.toLocaleDateString("de-DE")}${plan.id === member.subscriptionPlan ? " · dein aktueller Tarif" : ""}`
+        ? `Läuft dann bis ${end.toLocaleDateString("de-DE")}${plan.id === member.subscriptionPlan ? " · zuletzt gebucht" : ""}`
         : `Guthaben reicht nicht (fehlen ${formatCoins(plan.price - member.balance)})`,
       emoji: { name: affordable ? "✅" : "🚫" },
     };
@@ -1283,10 +1283,16 @@ function respondWithRenewSelect(member: { balance: number; feePaidUntil: Date | 
       : `Dein Abo ist am **${member.feePaidUntil.toLocaleDateString("de-DE")}** abgelaufen.`
     : "Du hast noch kein Abo.";
 
+  // Wer schon laeuft, verlaengert; wer neu ist, schliesst erstmalig ab.
+  const laeuftNoch = Boolean(member.feePaidUntil && member.feePaidUntil > now);
+  const frage = laeuftNoch
+    ? "Um welche Dauer möchtest du verlängern?"
+    : "Welches Paket möchtest du buchen?";
+
   return Response.json({
     type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
     data: {
-      content: `**Welches Paket möchtest du buchen?**
+      content: `**${frage}**
 ${laufzeit}
 Dein Guthaben: **${formatCoins(member.balance)}**`,
       flags: EPHEMERAL,
@@ -1320,7 +1326,7 @@ function runRenewal(
       const result = await renewOwnSubscriptionCore(memberId, planId);
       if (!result.ok) return `❌ ${result.error}`;
       const unix = Math.floor(result.newExpiry.getTime() / 1000);
-      return `✅ **${result.plan.label}** gebucht (${formatCoins(result.plan.price)} abgebucht).
+      return `✅ Um **${result.plan.label}** verlängert (${formatCoins(result.plan.price)} abgebucht).
 Läuft jetzt bis <t:${unix}:D> (<t:${unix}:R>).`;
     },
     mode
