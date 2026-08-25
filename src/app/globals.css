@@ -350,13 +350,13 @@ body {
 }
 
 .section-pad {
-  padding-top: 5.5rem;
-  padding-bottom: 5.5rem;
+  padding-top: 3.5rem;
+  padding-bottom: 3.5rem;
 }
 @media (min-width: 640px) {
   .section-pad {
-    padding-top: 7rem;
-    padding-bottom: 7rem;
+    padding-top: 4.5rem;
+    padding-bottom: 4.5rem;
   }
 }
 
@@ -830,4 +830,55 @@ a.partner-card:hover {
 .partner-dot:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+
+/* Team als kompakte Reihe statt grosser Kacheln - spart auf der Startseite
+   eine ganze Bildschirmhoehe, ohne jemanden wegzulassen. */
+.team-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  padding: 0.35rem 0.8rem 0.35rem 0.35rem;
+  transition: border-color 0.25s ease, transform 0.25s ease;
+}
+.team-chip:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  transform: translateY(-2px);
+}
+.team-chip-avatar {
+  height: 1.6rem;
+  width: 1.6rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  object-fit: cover;
+}
+
+/* Karten in den kompakten Reihen duerfen weniger Innenabstand haben. */
+.step-card,
+.feature-card {
+  padding: 1.1rem;
+}
+@media (min-width: 640px) {
+  .step-card,
+  .feature-card {
+    padding: 1.35rem;
+  }
+}
+.step-number {
+  font-size: 2rem;
+  top: 0.5rem;
+  right: 0.8rem;
+}
+.step-icon,
+.feature-icon {
+  height: 2.35rem;
+  width: 2.35rem;
+  font-size: 1.1rem;
 }

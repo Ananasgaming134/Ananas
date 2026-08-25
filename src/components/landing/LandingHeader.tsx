@@ -5,13 +5,12 @@ import { useEffect, useState } from "react";
 import { SITE_NAME } from "@/lib/constants";
 
 const LINKS = [
-  { href: "#ablauf", label: "Ablauf" },
-  { href: "#zahlen", label: "Zahlen" },
-  { href: "#stimmen", label: "Stimmen" },
-  { href: "#team", label: "Team" },
   // Der Abschnitt existiert nur, wenn Kooperationen gepflegt sind - sonst
   // wuerde der Punkt ins Leere fuehren.
   { href: "#kooperationen", label: "Kooperationen", nurMitPartnern: true },
+  { href: "#ablauf", label: "Ablauf" },
+  { href: "#pakete", label: "Preise" },
+  { href: "#stimmen", label: "Stimmen" },
   { href: "#fragen", label: "Fragen" },
 ];
 
