@@ -1,10 +1,7 @@
 import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { borrowItem, returnLoan } from "@/app/actions/loans";
-import LoanCountdown from "@/components/LoanCountdown";
-import ReborrowCooldown from "@/components/ReborrowCooldown";
-import AvailabilityBadge from "@/components/AvailabilityBadge";
+import ItemCard from "@/components/ItemCard";
 import { hasAtLeastRole, LOAN_STATUS, REBORROW_COOLDOWN_MS, ROLES } from "@/lib/constants";
 
 export default async function ItemsPage({
@@ -17,7 +14,8 @@ export default async function ItemsPage({
   const { q, kategorie } = await searchParams;
   const now = new Date();
 
-  const [items, activeLoans, myActiveLoans, myRecentReturns, categories, totalCount] = await Promise.all([
+  const [items, activeLoans, myActiveLoans, myRecentReturns, categories, totalCount, favorites] =
+    await Promise.all([
     prisma.item.findMany({
       where: {
         ...(q
@@ -52,7 +50,8 @@ export default async function ItemsPage({
     }),
     prisma.category.findMany({ orderBy: { name: "asc" } }),
     prisma.item.count(),
-  ]);
+    prisma.favorite.findMany({ where: { memberId: member.id }, select: { itemId: true } }),
+    ]);
 
   const activeCountByItem = new Map(activeLoans.map((l) => [l.itemId, l._count.itemId]));
   const myLoanByItem = new Map(myActiveLoans.map((l) => [l.itemId, l]));
@@ -71,16 +70,38 @@ export default async function ItemsPage({
     (sum, i) => sum + Math.max(0, i.quantityTotal - (activeCountByItem.get(i.id) ?? 0)),
     0
   );
+  const favoritIds = new Set(favorites.map((f) => f.itemId));
   const isFiltered = Boolean(q || kategorie);
   const isSuspended = Boolean(member.borrowSuspendedUntil && member.borrowSuspendedUntil > now);
   const isPaused = Boolean(member.pausedAt);
   const hasNoActiveSubscription = !member.pausedAt && (!member.feePaidUntil || member.feePaidUntil < now);
 
+  const sperren = {
+    gesperrt: isSuspended,
+    pausiert: isPaused,
+    ohneAbo: hasNoActiveSubscription,
+    unverifiziert: !member.verifiedAt,
+  };
+
+  const lageFuer = (item: (typeof items)[number]) => ({
+    available: item.quantityTotal - (activeCountByItem.get(item.id) ?? 0),
+    myLoan: myLoanByItem.get(item.id) ?? null,
+    cooldownEnd: cooldownEndByItem.get(item.id) ?? null,
+    favorit: favoritIds.has(item.id),
+  });
+
   // Items werden immer nach Kategorie gruppiert dargestellt - auch bei
   // "Alle Kategorien" - statt alphabetisch quer durcheinander, damit man sich
   // im Bestand zurechtfindet. "Ohne Kategorie" steht dabei immer zuletzt.
+  // Favoriten stehen als eigener Block ganz oben und werden deshalb aus den
+  // Kategorien herausgenommen - sonst stuende dieselbe Kachel zweimal auf der
+  // Seite. Bei aktiver Suche entfaellt der Block: dann sucht man gezielt und
+  // will das Ergebnis am Stueck sehen.
+  const favoritenItems = isFiltered ? [] : items.filter((i) => favoritIds.has(i.id));
+  const uebrigeItems = favoritenItems.length > 0 ? items.filter((i) => !favoritIds.has(i.id)) : items;
+
   const groups = new Map<string, { label: string; items: typeof items }>();
-  for (const item of items) {
+  for (const item of uebrigeItems) {
     const key = item.category?.id ?? "__none";
     const label = item.category?.name ?? "Ohne Kategorie";
     if (!groups.has(key)) groups.set(key, { label, items: [] });
@@ -200,6 +221,34 @@ export default async function ItemsPage({
         </div>
       ) : (
         <div className="space-y-8">
+          {favoritenItems.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="flex items-center gap-1.5 text-sm font-semibold text-accent">
+                  <span aria-hidden>★</span>
+                  Deine Favoriten
+                  <span className="text-xs font-normal text-muted/60">
+                    ({favoritenItems.length})
+                  </span>
+                </h2>
+                <span className="text-xs text-muted">
+                  Mit dem Stern an der Kachel merkst du dir Items — sie stehen dann hier oben.
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {favoritenItems.map((item) => (
+                  <ItemCard
+                    key={item.id}
+                    item={item}
+                    lage={lageFuer(item)}
+                    sperren={sperren}
+                    zeigeKategorie
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           {sortedGroups.map((group) => {
             const groupTotal = group.items.reduce((sum, i) => sum + i.quantityTotal, 0);
             const groupFree = group.items.reduce(
@@ -226,143 +275,9 @@ export default async function ItemsPage({
                 </span>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {group.items.map((item) => {
-                  const borrowedCount = activeCountByItem.get(item.id) ?? 0;
-                  const available = item.quantityTotal - borrowedCount;
-                  const myLoan = myLoanByItem.get(item.id);
-                  const cooldownEnd = cooldownEndByItem.get(item.id);
-                  const inCooldown = Boolean(cooldownEnd && cooldownEnd > now);
-
-                  return (
-                    <div key={item.id} className="card card-hover flex flex-col overflow-hidden">
-                      <div className="flex aspect-[4/5] w-full items-center justify-center bg-surface-2 p-3">
-                        {item.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={item.imageUrl}
-                            alt={item.name}
-                            className="h-full w-full object-contain"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-muted">
-                            Kein Bild
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex flex-1 flex-col p-4">
-                        <div className="flex items-start justify-between gap-2">
-                          <h3 className="text-sm font-semibold">{item.name}</h3>
-                          <div className="shrink-0">
-                            {item.unavailable ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/40 bg-danger/10 px-2 py-0.5 text-[11px] font-medium text-danger">
-                                <span className="h-1.5 w-1.5 rounded-full bg-danger" aria-hidden />
-                                gesperrt
-                              </span>
-                            ) : (
-                              <AvailabilityBadge available={available} total={item.quantityTotal} />
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="mt-auto pt-4">
-                          {item.unavailable ? (
-                            <div className="space-y-1">
-                              <button
-                                type="button"
-                                disabled
-                                className="w-full cursor-not-allowed rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
-                              >
-                                Derzeit nicht ausleihbar
-                              </button>
-                              {item.unavailableReason && (
-                                <p className="text-center text-[11px] text-muted">{item.unavailableReason}</p>
-                              )}
-                            </div>
-                          ) : myLoan ? (
-                            <>
-                              <p className="mb-2 text-center text-xs">
-                                {myLoan.dueAt ? (
-                                  <LoanCountdown dueAt={myLoan.dueAt} />
-                                ) : (
-                                  <span className="text-muted">Ausgeliehen</span>
-                                )}
-                              </p>
-                              <form action={returnLoan.bind(null, myLoan.id)}>
-                                <button
-                                  type="submit"
-                                  className="w-full rounded-lg border border-accent-2/40 bg-accent-2/10 px-3 py-2 text-sm font-medium text-accent-2 transition hover:bg-accent-2/20"
-                                >
-                                  Zurückgeben
-                                </button>
-                              </form>
-                            </>
-                          ) : isSuspended ? (
-                            <button
-                              type="button"
-                              disabled
-                              className="w-full cursor-not-allowed rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
-                            >
-                              Gesperrt
-                            </button>
-                          ) : isPaused ? (
-                            <button
-                              type="button"
-                              disabled
-                              className="w-full cursor-not-allowed rounded-lg border border-border px-3 py-2 text-sm text-muted"
-                            >
-                              Abo pausiert
-                            </button>
-                          ) : hasNoActiveSubscription ? (
-                            <a
-                              href="/dashboard/abo"
-                              className="block w-full rounded-lg border border-border px-3 py-2 text-center text-sm text-muted transition hover:bg-surface-2"
-                            >
-                              Kein aktives Abo
-                            </a>
-                          ) : !member.verifiedAt ? (
-                            <a
-                              href="/dashboard/akte"
-                              className="block w-full rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-center text-sm text-yellow-500 transition hover:bg-yellow-500/20"
-                            >
-                              Verifizierung nötig
-                            </a>
-                          ) : inCooldown && cooldownEnd ? (
-                            <div className="space-y-2">
-                              <p className="text-center text-xs text-muted">
-                                <ReborrowCooldown until={cooldownEnd} />
-                              </p>
-                              <button
-                                type="button"
-                                disabled
-                                className="w-full cursor-not-allowed rounded-lg border border-border px-3 py-2 text-sm text-muted"
-                              >
-                                Ausleihen
-                              </button>
-                            </div>
-                          ) : available > 0 ? (
-                            <form action={borrowItem.bind(null, item.id)}>
-                              <button
-                                type="submit"
-                                className="w-full rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-black transition hover:brightness-110"
-                              >
-                                Ausleihen
-                              </button>
-                            </form>
-                          ) : (
-                            <button
-                              type="button"
-                              disabled
-                              className="w-full cursor-not-allowed rounded-lg border border-border px-3 py-2 text-sm text-muted"
-                            >
-                              Nicht verfügbar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                {group.items.map((item) => (
+                  <ItemCard key={item.id} item={item} lage={lageFuer(item)} sperren={sperren} />
+                ))}
               </div>
             </div>
             );

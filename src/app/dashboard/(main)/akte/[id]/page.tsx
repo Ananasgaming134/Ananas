@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
@@ -15,6 +16,7 @@ import StatusBadge from "@/components/StatusBadge";
 import StatCard from "@/components/StatCard";
 import ElapsedTime from "@/components/ElapsedTime";
 import LoanCountdown from "@/components/LoanCountdown";
+import ItemCard from "@/components/ItemCard";
 import AboAssignForm from "@/components/AboAssignForm";
 import BalanceAdjustForm from "@/components/BalanceAdjustForm";
 import VerifyForm from "@/components/VerifyForm";
@@ -45,7 +47,10 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
   const target = await prisma.member.findUnique({ where: { id } });
   if (!target) notFound();
 
-  const [loans, notes, suspensionEvents, sanctions] = await Promise.all([
+  // Die Merkliste ist persoenlich - sie wird nur im eigenen Profil geladen
+  // und angezeigt, nicht wenn die Aufsicht eine fremde Akte oeffnet.
+  const [loans, notes, suspensionEvents, sanctions, merkliste, aktiveAusleihenGesamt] =
+    await Promise.all([
     prisma.loan.findMany({
       where: { memberId: target.id },
       include: { item: true },
@@ -67,7 +72,33 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
       include: { issuedBy: true },
       orderBy: { createdAt: "desc" },
     }),
-  ]);
+    isSelf
+      ? prisma.favorite.findMany({
+          where: { memberId: target.id },
+          include: { item: { include: { category: true } } },
+          orderBy: { createdAt: "asc" },
+        })
+      : Promise.resolve([]),
+    isSelf
+      ? prisma.loan.groupBy({
+          by: ["itemId"],
+          where: { status: LOAN_STATUS.ACTIVE },
+          _count: { itemId: true },
+        })
+      : Promise.resolve([]),
+    ]);
+
+  const belegtProItem = new Map(aktiveAusleihenGesamt.map((l) => [l.itemId, l._count.itemId]));
+  const eigeneAktive = new Map(
+    loans.filter((l) => l.status === LOAN_STATUS.ACTIVE).map((l) => [l.itemId, l])
+  );
+  const jetzt = new Date();
+  const merkSperren = {
+    gesperrt: Boolean(target.borrowSuspendedUntil && target.borrowSuspendedUntil > jetzt),
+    pausiert: Boolean(target.pausedAt),
+    ohneAbo: !target.pausedAt && (!target.feePaidUntil || target.feePaidUntil < jetzt),
+    unverifiziert: !target.verifiedAt,
+  };
 
   // Verstoesse = verspaetet zurueckgegebene Ausleihen (returnedAt nach dueAt)
   // plus jede tatsaechlich verhaengte Ausleih-Sperre - alles aus vorhandenen
@@ -528,6 +559,53 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
           />
         </div>
       </div>
+
+      {isSelf && (
+        <div className="card p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+              <span className="text-accent" aria-hidden>
+                ★
+              </span>
+              Deine Favoriten
+              {merkliste.length > 0 && (
+                <span className="text-xs font-normal text-muted">({merkliste.length})</span>
+              )}
+            </h2>
+            <Link href="/dashboard/items" className="text-xs text-accent hover:underline">
+              Zu den Items →
+            </Link>
+          </div>
+
+          {merkliste.length === 0 ? (
+            <p className="text-sm text-muted">
+              Du hast dir noch nichts gemerkt. Klick bei den{" "}
+              <Link href="/dashboard/items" className="text-accent hover:underline">
+                Items
+              </Link>{" "}
+              auf den Stern an einer Kachel — gemerkte Items stehen dort dann ganz oben und hier
+              in deinem Profil.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {merkliste.map((eintrag) => (
+                <ItemCard
+                  key={eintrag.id}
+                  item={eintrag.item}
+                  lage={{
+                    available: eintrag.item.quantityTotal - (belegtProItem.get(eintrag.itemId) ?? 0),
+                    myLoan: eigeneAktive.get(eintrag.itemId) ?? null,
+                    cooldownEnd: null,
+                    favorit: true,
+                  }}
+                  sperren={merkSperren}
+                  zeigeKategorie
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="card p-6">
         <h2 className="mb-4 text-sm font-semibold">Ausleihhistorie</h2>

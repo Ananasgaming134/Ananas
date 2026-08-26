@@ -107,6 +107,7 @@ model Member {
   updatedAt      DateTime @updatedAt
 
   loans          Loan[]
+  favorites      Favorite[]
   planChangeRequests PlanChangeRequest[]
   notesAbout     MemberNote[] @relation("NotesAboutMember")
   notesAuthored  MemberNote[] @relation("NotesByAuthor")
@@ -197,6 +198,7 @@ model Item {
   updatedAt      DateTime  @updatedAt
 
   loans          Loan[]
+  favorites      Favorite[]
 
   @@index([categoryId])
   @@index([sourceKey])
@@ -570,4 +572,18 @@ model SiteConfig {
   updatedById       String?
   updatedAt         DateTime @updatedAt
   createdAt         DateTime @default(now())
+}
+
+/// Merkliste: welche Items ein Mitglied mit dem Stern markiert hat. Rein
+/// persoenlich - jeder sieht nur seine eigenen.
+model Favorite {
+  id        String   @id @default(cuid())
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  itemId    String
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([memberId, itemId])
+  @@index([memberId])
 }
