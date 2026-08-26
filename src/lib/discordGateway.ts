@@ -22,12 +22,31 @@ const CROSS = "❌";
  * Auto-Archiv-Zeit aufs Maximum gesetzt. Geschlossene Tickets bleiben
  * archiviert - die sollen ja einschlafen.
  */
+/**
+ * Kanal-IDs der offenen Tickets, kurz zwischengespeichert. Ohne das loeste
+ * JEDE Nachricht auf dem ganzen Server eine Datenbank-Abfrage aus - bei
+ * lebhaftem Betrieb laufend Last, die mit den Seitenaufrufen konkurriert.
+ */
+let offeneTicketKanaele: Set<string> | null = null;
+let ticketKanaeleBis = 0;
+const TICKET_CACHE_MS = 30_000;
+
+async function istOffenesTicket(channelId: string): Promise<boolean> {
+  if (!offeneTicketKanaele || ticketKanaeleBis <= Date.now()) {
+    const offene = await prisma.ticket.findMany({
+      where: { status: { not: "CLOSED" }, discordChannelId: { not: null } },
+      select: { discordChannelId: true },
+    });
+    offeneTicketKanaele = new Set(
+      offene.map((t) => t.discordChannelId).filter((id): id is string => Boolean(id))
+    );
+    ticketKanaeleBis = Date.now() + TICKET_CACHE_MS;
+  }
+  return offeneTicketKanaele.has(channelId);
+}
+
 async function keepTicketThreadAlive(channelId: string) {
-  const ticket = await prisma.ticket.findFirst({
-    where: { discordChannelId: channelId, status: { not: "CLOSED" } },
-    select: { id: true },
-  });
-  if (!ticket) return;
+  if (!(await istOffenesTicket(channelId))) return;
 
   await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
     method: "PATCH",
