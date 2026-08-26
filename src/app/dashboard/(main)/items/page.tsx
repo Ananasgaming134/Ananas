@@ -4,54 +4,98 @@ import { prisma } from "@/lib/prisma";
 import ItemCard from "@/components/ItemCard";
 import { hasAtLeastRole, LOAN_STATUS, REBORROW_COOLDOWN_MS, ROLES } from "@/lib/constants";
 
+/**
+ * Wie viele Kacheln eine Seite zeigt. Vorher standen alle Items auf einer
+ * Seite - bei ueber 250 Items sind das rund 180 KB, die nach JEDEM Klick auf
+ * "Ausleihen" neu erzeugt und uebertragen werden mussten. Genau das hat den
+ * Knopf traege gemacht.
+ */
+const PRO_SEITE = 48;
+
 export default async function ItemsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; kategorie?: string }>;
+  searchParams: Promise<{ q?: string; kategorie?: string; seite?: string }>;
 }) {
   const member = await requireMember();
   const isOwner = hasAtLeastRole(member.role, ROLES.OWNER);
-  const { q, kategorie } = await searchParams;
+  const { q, kategorie, seite } = await searchParams;
   const now = new Date();
 
-  const [items, activeLoans, myActiveLoans, myRecentReturns, categories, totalCount, favorites] =
+  const isFiltered = Boolean(q || kategorie);
+  const aktuelleSeite = Math.max(1, parseInt(seite ?? "1", 10) || 1);
+
+  // Die Merkliste bestimmt mit, was auf den Seiten landet - deshalb zuerst.
+  const favorites = await prisma.favorite.findMany({
+    where: { memberId: member.id },
+    select: { itemId: true },
+  });
+  const favoritIds = new Set(favorites.map((f) => f.itemId));
+
+  const suchFilter = {
+    ...(q
+      ? {
+          OR: [
+            { name: { contains: q, mode: "insensitive" as const } },
+            { description: { contains: q, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+    ...(kategorie ? { categoryId: kategorie } : {}),
+  };
+
+  // Gemerkte Items stehen als eigener Block oben und werden aus den Seiten
+  // herausgenommen, damit dieselbe Kachel nicht zweimal erscheint. Bei einer
+  // Suche entfaellt das: dann will man das Ergebnis am Stueck sehen.
+  const zeigeFavoriten = !isFiltered && favoritIds.size > 0;
+  const seitenFilter = zeigeFavoriten
+    ? { ...suchFilter, id: { notIn: [...favoritIds] } }
+    : suchFilter;
+
+  const [items, favoritenItems, activeLoans, myActiveLoans, myRecentReturns, categories, totalCount, gefiltertCount, bestand] =
     await Promise.all([
-    prisma.item.findMany({
-      where: {
-        ...(q
-          ? {
-              OR: [
-                { name: { contains: q, mode: "insensitive" } },
-                { description: { contains: q, mode: "insensitive" } },
-              ],
-            }
-          : {}),
-        ...(kategorie ? { categoryId: kategorie } : {}),
-      },
-      orderBy: { name: "asc" },
-      include: { category: true },
-    }),
-    prisma.loan.groupBy({
-      by: ["itemId"],
-      where: { status: LOAN_STATUS.ACTIVE },
-      _count: { itemId: true },
-    }),
-    prisma.loan.findMany({
-      where: { memberId: member.id, status: LOAN_STATUS.ACTIVE },
-    }),
-    prisma.loan.findMany({
-      where: {
-        memberId: member.id,
-        status: LOAN_STATUS.RETURNED,
-        returnedAt: { gte: new Date(now.getTime() - REBORROW_COOLDOWN_MS) },
-      },
-      orderBy: { returnedAt: "desc" },
-      select: { itemId: true, returnedAt: true },
-    }),
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
-    prisma.item.count(),
-    prisma.favorite.findMany({ where: { memberId: member.id }, select: { itemId: true } }),
+      // Nach Kategorie sortiert, damit die Gruppen auf einer Seite
+      // zusammenhaengen und nicht ueber die Seiten zerfallen.
+      prisma.item.findMany({
+        where: seitenFilter,
+        orderBy: [{ category: { name: "asc" } }, { name: "asc" }],
+        include: { category: true },
+        skip: (aktuelleSeite - 1) * PRO_SEITE,
+        take: PRO_SEITE,
+      }),
+      zeigeFavoriten
+        ? prisma.item.findMany({
+            where: { id: { in: [...favoritIds] } },
+            orderBy: { name: "asc" },
+            include: { category: true },
+          })
+        : Promise.resolve([]),
+      prisma.loan.groupBy({
+        by: ["itemId"],
+        where: { status: LOAN_STATUS.ACTIVE },
+        _count: { itemId: true },
+      }),
+      prisma.loan.findMany({
+        where: { memberId: member.id, status: LOAN_STATUS.ACTIVE },
+      }),
+      prisma.loan.findMany({
+        where: {
+          memberId: member.id,
+          status: LOAN_STATUS.RETURNED,
+          returnedAt: { gte: new Date(now.getTime() - REBORROW_COOLDOWN_MS) },
+        },
+        orderBy: { returnedAt: "desc" },
+        select: { itemId: true, returnedAt: true },
+      }),
+      prisma.category.findMany({ orderBy: { name: "asc" } }),
+      prisma.item.count(),
+      prisma.item.count({ where: suchFilter }),
+      // Verfuegbarkeit ueber den GANZEN Bestand, nicht nur die sichtbare
+      // Seite - sonst haengt die Zahl davon ab, wo man gerade blaettert.
+      prisma.item.aggregate({ _sum: { quantityTotal: true } }),
     ]);
+
+  const seitenGesamt = Math.max(1, Math.ceil(gefiltertCount / PRO_SEITE));
 
   const activeCountByItem = new Map(activeLoans.map((l) => [l.itemId, l._count.itemId]));
   const myLoanByItem = new Map(myActiveLoans.map((l) => [l.itemId, l]));
@@ -63,15 +107,10 @@ export default async function ItemsPage({
     if (!loan.returnedAt || cooldownEndByItem.has(loan.itemId)) continue;
     cooldownEndByItem.set(loan.itemId, new Date(loan.returnedAt.getTime() + REBORROW_COOLDOWN_MS));
   }
-  // Gesamt-Verfuegbarkeit ueber die gerade angezeigten Items (Stueckzahlen,
-  // nicht Item-Arten) - das ist die Zahl, die man beim Ausleihen wirklich braucht.
-  const totalUnits = items.reduce((sum, i) => sum + i.quantityTotal, 0);
-  const freeUnits = items.reduce(
-    (sum, i) => sum + Math.max(0, i.quantityTotal - (activeCountByItem.get(i.id) ?? 0)),
-    0
-  );
-  const favoritIds = new Set(favorites.map((f) => f.itemId));
-  const isFiltered = Boolean(q || kategorie);
+
+  const totalUnits = bestand._sum.quantityTotal ?? 0;
+  const belegteEinheiten = activeLoans.reduce((sum, l) => sum + l._count.itemId, 0);
+  const freeUnits = Math.max(0, totalUnits - belegteEinheiten);
   const isSuspended = Boolean(member.borrowSuspendedUntil && member.borrowSuspendedUntil > now);
   const isPaused = Boolean(member.pausedAt);
   const hasNoActiveSubscription = !member.pausedAt && (!member.feePaidUntil || member.feePaidUntil < now);
@@ -93,15 +132,8 @@ export default async function ItemsPage({
   // Items werden immer nach Kategorie gruppiert dargestellt - auch bei
   // "Alle Kategorien" - statt alphabetisch quer durcheinander, damit man sich
   // im Bestand zurechtfindet. "Ohne Kategorie" steht dabei immer zuletzt.
-  // Favoriten stehen als eigener Block ganz oben und werden deshalb aus den
-  // Kategorien herausgenommen - sonst stuende dieselbe Kachel zweimal auf der
-  // Seite. Bei aktiver Suche entfaellt der Block: dann sucht man gezielt und
-  // will das Ergebnis am Stueck sehen.
-  const favoritenItems = isFiltered ? [] : items.filter((i) => favoritIds.has(i.id));
-  const uebrigeItems = favoritenItems.length > 0 ? items.filter((i) => !favoritIds.has(i.id)) : items;
-
   const groups = new Map<string, { label: string; items: typeof items }>();
-  for (const item of uebrigeItems) {
+  for (const item of items) {
     const key = item.category?.id ?? "__none";
     const label = item.category?.name ?? "Ohne Kategorie";
     if (!groups.has(key)) groups.set(key, { label, items: [] });
@@ -119,8 +151,9 @@ export default async function ItemsPage({
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm text-muted">
             {isFiltered
-              ? `${items.length} von ${totalCount} Item-Arten gefunden.`
+              ? `${gefiltertCount} von ${totalCount} Item-Arten gefunden.`
               : `${totalCount} Item-Arten im LeihCenter-Bestand.`}
+            {seitenGesamt > 1 && ` Seite ${aktuelleSeite} von ${seitenGesamt}.`}
           </p>
           <span
             className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
@@ -176,6 +209,8 @@ export default async function ItemsPage({
 
       {categories.length > 0 && (
         <form className="card flex flex-wrap items-center gap-3 p-4" method="GET">
+          {/* Ohne das bliebe man beim Suchen auf der alten Seitenzahl haengen. */}
+          <input type="hidden" name="seite" value="1" />
           <input
             type="text"
             name="q"
@@ -282,8 +317,72 @@ export default async function ItemsPage({
             </div>
             );
           })}
+
+          {seitenGesamt > 1 && (
+            <nav className="flex flex-wrap items-center justify-center gap-2 pt-2">
+              <SeitenLink
+                seite={aktuelleSeite - 1}
+                q={q}
+                kategorie={kategorie}
+                aus={aktuelleSeite === 1}
+              >
+                ← Zurück
+              </SeitenLink>
+
+              <span className="px-2 text-xs text-muted">
+                Seite {aktuelleSeite} von {seitenGesamt}
+              </span>
+
+              <SeitenLink
+                seite={aktuelleSeite + 1}
+                q={q}
+                kategorie={kategorie}
+                aus={aktuelleSeite >= seitenGesamt}
+              >
+                Weiter →
+              </SeitenLink>
+            </nav>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+/** Ein Blaetter-Knopf, der Suche und Kategorie mitnimmt. */
+function SeitenLink({
+  seite,
+  q,
+  kategorie,
+  aus,
+  children,
+}: {
+  seite: number;
+  q?: string;
+  kategorie?: string;
+  aus: boolean;
+  children: React.ReactNode;
+}) {
+  if (aus) {
+    return (
+      <span className="cursor-not-allowed rounded-lg border border-border px-4 py-2 text-sm text-muted/50">
+        {children}
+      </span>
+    );
+  }
+
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (kategorie) params.set("kategorie", kategorie);
+  if (seite > 1) params.set("seite", String(seite));
+  const suffix = params.toString();
+
+  return (
+    <Link
+      href={`/dashboard/items${suffix ? `?${suffix}` : ""}`}
+      className="rounded-lg border border-border px-4 py-2 text-sm font-medium transition hover:border-accent/40 hover:bg-surface-2"
+    >
+      {children}
+    </Link>
   );
 }
