@@ -59,7 +59,42 @@ export const LOAN_STATUS_LABELS: Record<LoanStatusValue, string> = {
 export const BORROW_DURATION_MS = 2 * 60 * 60 * 1000; // 2 Stunden pro Ausleihe
 export const REBORROW_COOLDOWN_MS = 30 * 60 * 1000; // 30 Min. Pause vor erneuter Ausleihe desselben Items
 export const OVERDUE_SUSPENSION_GRACE_MS = 15 * 60 * 1000; // Kulanzfrist nach Ablauf, bevor die Sperre greift
-export const BORROW_SUSPENSION_DURATION_MS = 2 * 60 * 60 * 1000; // Dauer der Ausleih-Sperre bei Ueberziehung
+/**
+ * Wie lange jemand nach einer Ueberziehung nicht ausleihen darf - gestaffelt
+ * nach der tatsaechlich ueberzogenen Zeit. Wer nur ein paar Minuten drueber
+ * ist, soll nicht genauso hart getroffen werden wie jemand, der ein Item
+ * einen halben Tag behaelt.
+ *
+ * Die Staffel greift zweimal: sobald die Kulanzfrist reisst, vorlaeufig
+ * anhand der bis dahin ueberzogenen Zeit - und bei der Rueckgabe noch einmal
+ * neu, anhand der wirklich ueberzogenen Zeit, dann ab dem Moment der
+ * Rueckgabe. Sonst koennte man sich der Sperre entziehen, indem man das Item
+ * einfach behaelt.
+ */
+export const SUSPENSION_STEPS: { bisMs: number; sperreMs: number }[] = [
+  { bisMs: 1 * 60 * 60 * 1000, sperreMs: 3 * 60 * 60 * 1000 },
+  { bisMs: 2 * 60 * 60 * 1000, sperreMs: 6 * 60 * 60 * 1000 },
+  { bisMs: 3 * 60 * 60 * 1000, sperreMs: 12 * 60 * 60 * 1000 },
+];
+export const SUSPENSION_MAX_MS = 24 * 60 * 60 * 1000;
+
+/** Sperrdauer fuer eine bestimmte Ueberziehung. Innerhalb der Kulanz: keine. */
+export function suspensionForOverdue(overdueMs: number): number {
+  if (overdueMs <= OVERDUE_SUSPENSION_GRACE_MS) return 0;
+  for (const stufe of SUSPENSION_STEPS) {
+    if (overdueMs <= stufe.bisMs) return stufe.sperreMs;
+  }
+  return SUSPENSION_MAX_MS;
+}
+
+/** "3 Stunden", "45 Minuten" - fuer Meldungen an die Betroffenen. */
+export function formatDuration(ms: number): string {
+  const minuten = Math.round(ms / 60000);
+  if (minuten < 60) return `${minuten} Minute${minuten === 1 ? "" : "n"}`;
+  const stunden = Math.round((minuten / 60) * 10) / 10;
+  const anzeige = Number.isInteger(stunden) ? String(stunden) : stunden.toLocaleString("de-DE");
+  return `${anzeige} Stunde${stunden === 1 ? "" : "n"}`;
+}
 
 export const LOAN_REMINDER_STAGE = {
   NONE: "NONE",

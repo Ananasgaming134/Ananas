@@ -7,6 +7,8 @@ import {
   BORROW_DURATION_MS,
   LOAN_STATUS,
   REBORROW_COOLDOWN_MS,
+  formatDuration,
+  suspensionForOverdue,
   type LoanChannelValue,
 } from "@/lib/constants";
 
@@ -199,6 +201,56 @@ export async function returnLoanCore(
     action: "ITEM_RETURNED",
     details: `"${loan.item.name}" zurückgegeben (Loan ${loanId})${isForeign ? " - durch Aufsicht/Owner für das Mitglied ausgebucht" : ""}`,
   });
+
+  // Sperre anhand der TATSAECHLICH ueberzogenen Zeit neu bestimmen. Waehrend
+  // das Item draussen war, galt nur eine vorlaeufige Sperre - wer laenger
+  // haelt, bekommt jetzt entsprechend mehr, gerechnet ab diesem Moment.
+  const ueberzogenMs = loan.dueAt ? returnedAt.getTime() - loan.dueAt.getTime() : 0;
+  const sperreMs = suspensionForOverdue(ueberzogenMs);
+
+  if (sperreMs > 0) {
+    const gesperrtBis = new Date(returnedAt.getTime() + sperreMs);
+    const grund =
+      `"${loan.item.name}" um ${formatDuration(ueberzogenMs)} überzogen ` +
+      `(Frist war ${loan.dueAt?.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}).`;
+
+    await prisma.member.update({
+      where: { id: loan.memberId },
+      data: { borrowSuspendedUntil: gesperrtBis, borrowSuspendedReason: grund },
+    });
+    await logAction({
+      actorId: actorMemberId,
+      targetId: loan.memberId,
+      action: "BORROW_SUSPENDED",
+      details: `${grund} Ausleih-Sperre ${formatDuration(sperreMs)} bis ${gesperrtBis.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}.`,
+    });
+
+    const empfaenger = await prisma.member.findUnique({
+      where: { id: loan.memberId },
+      select: { discordId: true },
+    });
+    if (empfaenger) {
+      // Nicht abwarten - die Rueckgabe ist fertig, die DM darf nachlaufen.
+      void sendDiscordDirectMessage(empfaenger.discordId, {
+        embeds: [
+          {
+            title: "🚫 Ausleih-Sperre nach verspäteter Rückgabe",
+            description:
+              `Du hast **"${loan.item.name}"** um **${formatDuration(ueberzogenMs)}** überzogen.
+
+` +
+              `Du kannst deshalb **${formatDuration(sperreMs)}** lang nichts ausleihen — bis ` +
+              `**${gesperrtBis.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" })}**.
+
+` +
+              `Die Sperre richtet sich danach, wie lange du überzogen hast: bis 1 Std. sind es 3 Std., ` +
+              `bis 2 Std. sind es 6 Std., bis 3 Std. sind es 12 Std., darüber 24 Std.`,
+            color: 0xf2545b,
+          },
+        ],
+      }).catch(() => {});
+    }
+  }
 
   // War die Ausleihe ueberzogen, wird die offene Meldung im Ueberzieh-Kanal
   // abgeschlossen statt stehen zu bleiben.

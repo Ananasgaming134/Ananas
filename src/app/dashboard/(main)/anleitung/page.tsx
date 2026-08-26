@@ -3,7 +3,6 @@ import {
   BORROW_DURATION_MS,
   OVERDUE_SUSPENSION_GRACE_MS,
   REBORROW_COOLDOWN_MS,
-  BORROW_SUSPENSION_DURATION_MS,
 } from "@/lib/constants";
 
 const STEPS = [
@@ -32,7 +31,7 @@ const STEPS = [
 const hours = BORROW_DURATION_MS / (60 * 60 * 1000);
 const cooldownMin = REBORROW_COOLDOWN_MS / (60 * 1000);
 const graceMin = OVERDUE_SUSPENSION_GRACE_MS / (60 * 1000);
-const suspensionHours = BORROW_SUSPENSION_DURATION_MS / (60 * 60 * 1000);
+const suspensionHours = 3;
 
 export default function AnleitungPage() {
   return (

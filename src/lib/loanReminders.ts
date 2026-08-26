@@ -3,7 +3,8 @@ import { logAction } from "@/lib/audit";
 import { sendDiscordDirectMessage } from "@/lib/discord";
 import { postOverdueNotice } from "@/lib/overdueChannel";
 import {
-  BORROW_SUSPENSION_DURATION_MS,
+  formatDuration,
+  suspensionForOverdue,
   LOAN_REMINDER_STAGE,
   LOAN_STATUS,
   OVERDUE_SUSPENSION_GRACE_MS,
@@ -66,7 +67,10 @@ export async function processLoanReminders(): Promise<{ remindersSent: number; s
     await prisma.loan.update({ where: { id: loan.id }, data: { reminderStage: target } });
 
     if (target === LOAN_REMINDER_STAGE.SUSPENDED) {
-      const suspendedUntil = new Date(now.getTime() + BORROW_SUSPENSION_DURATION_MS);
+      // Vorlaeufig - beim Zurueckgeben wird anhand der tatsaechlich
+      // ueberzogenen Zeit neu gerechnet (siehe returnLoanCore).
+      const dauer = suspensionForOverdue(-msRemaining);
+      const suspendedUntil = new Date(now.getTime() + dauer);
       const reason = `"${loan.item.name}" um mehr als 15 Min. überzogen (Ausleihe vom ${formatDateTime(loan.borrowedAt)}).`;
 
       await prisma.member.update({
