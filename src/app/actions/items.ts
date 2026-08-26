@@ -1,5 +1,7 @@
 "use server";
 
+import { after } from "next/server";
+
 import fs from "node:fs/promises";
 import path from "node:path";
 import { revalidatePath } from "next/cache";
@@ -10,6 +12,23 @@ import { logAction } from "@/lib/audit";
 import { fetchPriceSourceItems, searchPriceSourceItems } from "@/lib/priceSource";
 import { refreshPanelsQuietly, syncCategoryChannelsQuietly } from "@/lib/discordPanel";
 import { PRICE_STATUS, ROLES } from "@/lib/constants";
+
+/**
+ * Bringt die Discord-Panels auf den neuen Stand - NACH dem Ausliefern der
+ * Antwort. Das Neuschreiben der Panel-Nachrichten dauert mehrere Sekunden
+ * (zwischen den Nachrichten liegen bewusst Pausen, sonst sperrt Discord uns
+ * aus). Solange darauf gewartet wurde, stand die Oberflaeche still.
+ */
+function discordNachziehen() {
+  after(async () => {
+    try {
+      await refreshPanelsQuietly();
+      await syncCategoryChannelsQuietly();
+    } catch (err) {
+      console.error("[panels] Aktualisierung fehlgeschlagen:", err);
+    }
+  });
+}
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -159,8 +178,7 @@ export async function createItem(formData: FormData) {
   });
 
   refreshItemPages();
-  await refreshPanelsQuietly();
-  await syncCategoryChannelsQuietly();
+  discordNachziehen();
   redirect("/dashboard/verwaltung/items");
 }
 
@@ -210,8 +228,7 @@ export async function updateItem(itemId: string, formData: FormData) {
   });
 
   refreshItemPages();
-  await refreshPanelsQuietly();
-  await syncCategoryChannelsQuietly();
+  discordNachziehen();
   redirect("/dashboard/verwaltung/items");
 }
 
@@ -230,8 +247,7 @@ export async function deleteItem(itemId: string) {
   });
 
   refreshItemPages();
-  await refreshPanelsQuietly();
-  await syncCategoryChannelsQuietly();
+  discordNachziehen();
 }
 
 export async function reportPriceUnavailable(itemId: string) {
@@ -331,8 +347,7 @@ export async function refreshItemPrices() {
   });
 
   refreshItemPages();
-  await refreshPanelsQuietly();
-  await syncCategoryChannelsQuietly();
+  discordNachziehen();
 }
 
 /**
@@ -364,8 +379,7 @@ export async function toggleItemAvailability(itemId: string, formData: FormData)
       : `"${item.name}" wieder freigegeben.`,
   });
 
-  await refreshPanelsQuietly();
-  await syncCategoryChannelsQuietly();
+  discordNachziehen();
   revalidatePath("/dashboard/items");
   revalidatePath("/dashboard/verwaltung/items");
 }

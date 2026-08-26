@@ -1,5 +1,7 @@
 "use server";
 
+import { after } from "next/server";
+
 import { revalidatePath } from "next/cache";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
@@ -34,7 +36,7 @@ export async function createCategory(formData: FormData) {
   });
 
   // Legt den zugehoerigen Discord-Textkanal samt Panel an.
-  await syncCategoryChannelsQuietly();
+  kategorienNachziehen();
   refreshCategoryPages();
 }
 
@@ -55,7 +57,7 @@ export async function renameCategory(categoryId: string, formData: FormData) {
 
   // Kanal mit umbenennen und das Panel darin aktualisieren.
   await renameCategoryChannel(categoryId, name).catch(() => {});
-  await syncCategoryChannelsQuietly();
+  kategorienNachziehen();
   refreshCategoryPages();
 }
 
@@ -74,6 +76,20 @@ export async function deleteCategory(categoryId: string) {
     details: `Kategorie "${existing.name}" gelöscht. Zugeordnete Items sind jetzt ohne Kategorie.`,
   });
 
-  await syncCategoryChannelsQuietly();
+  kategorienNachziehen();
   refreshCategoryPages();
+}
+
+/**
+ * Kategorie-Kanaele nachziehen - nach dem Ausliefern der Antwort, damit das
+ * Speichern nicht auf Discord wartet.
+ */
+function kategorienNachziehen() {
+  after(async () => {
+    try {
+      await syncCategoryChannelsQuietly();
+    } catch (err) {
+      console.error("[kategorien] Kanal-Abgleich fehlgeschlagen:", err);
+    }
+  });
 }

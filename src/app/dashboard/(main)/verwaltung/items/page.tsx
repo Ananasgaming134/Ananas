@@ -129,8 +129,11 @@ export default async function VerwaltenPage({
         </form>
       )}
 
-      <div className="card overflow-hidden">
-        <table className="w-full text-left text-sm">
+      {/* overflow-x-auto statt overflow-hidden: bei schmalen Fenstern war die
+          Aktionen-Spalte vorher schlicht abgeschnitten und die Knoepfe
+          dahinter nicht erreichbar. */}
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-[52rem] text-left text-sm">
           <thead className="border-b border-border bg-surface-2/60 text-xs uppercase text-muted">
             <tr>
               <th className="px-4 py-3 font-medium">Item</th>
@@ -193,15 +196,7 @@ export default async function VerwaltenPage({
                         >
                           Bearbeiten
                         </Link>
-                        <form action={toggleItemAvailability.bind(null, item.id)} className="flex gap-1">
-                          {!item.unavailable && (
-                            <input
-                              type="text"
-                              name="reason"
-                              placeholder="Grund (optional)"
-                              className="w-32 rounded-lg border border-border bg-surface px-2 py-1.5 text-xs outline-none ring-accent/40 focus:ring-2"
-                            />
-                          )}
+                        <form action={toggleItemAvailability.bind(null, item.id)}>
                           <button
                             type="submit"
                             className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
