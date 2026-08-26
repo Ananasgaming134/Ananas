@@ -117,7 +117,15 @@ export async function borrowItemCore(
 
   // Bestaetigung per DM samt Rueckgabe-Knopf - so hat man seine laufenden
   // Ausleihen und die Frist immer griffbereit, ohne einen Kanal zu suchen.
-  await sendBorrowConfirmationDm(member.discordId, item.name, loan.id, loan.dueAt).catch(() => {});
+  //
+  // BEWUSST NICHT abgewartet: eine DM kostet zwei Discord-Aufrufe (erst den
+  // Gespraechskanal oeffnen, dann senden) und damit gemessen rund eine
+  // Sekunde. Solange darauf gewartet wurde, stand der Ausleih-Knopf still und
+  // fuehlte sich an, als haenge er. Die Ausleihe ist an dieser Stelle bereits
+  // gebucht; die DM darf danach in Ruhe rausgehen.
+  void sendBorrowConfirmationDm(member.discordId, item.name, loan.id, loan.dueAt).catch((err) =>
+    console.error("[ausleihe] Bestaetigungs-DM fehlgeschlagen:", err)
+  );
 
   return { ok: true, loanId: loan.id };
 }
