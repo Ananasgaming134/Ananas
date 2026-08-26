@@ -7,7 +7,16 @@ import {
   DISCORD_SUBSCRIPTION_CHANNEL_ID,
   sendDiscordDirectMessage,
 } from "@/lib/discord";
-import { formatCoins, getSubscriptionPlan, SITE_NAME, SUBSCRIPTION_PLANS, type SubscriptionPlan } from "@/lib/constants";
+import {
+  MAX_SUBSCRIPTION_AHEAD_MONTHS,
+  SITE_NAME,
+  SUBSCRIPTION_PLANS,
+  exceedsMaxSubscription,
+  formatCoins,
+  getSubscriptionPlan,
+  subscriptionEndAfter,
+  type SubscriptionPlan,
+} from "@/lib/constants";
 
 export const RENEW_PREFIX = "leihcenter_renew:";
 
@@ -74,6 +83,19 @@ export async function setSubscriptionPlanCore(
 
   const plan = getSubscriptionPlan(planId);
   if (!plan) return { ok: false, error: "Unbekannter Abo-Plan." };
+
+  // Niemand soll sich durch mehrfaches Verlaengern Jahre im Voraus sichern.
+  if (exceedsMaxSubscription(plan, target.feePaidUntil)) {
+    const ende = subscriptionEndAfter(plan, target.feePaidUntil);
+    const laeuftBis = target.feePaidUntil?.toLocaleDateString("de-DE");
+    return {
+      ok: false,
+      error:
+        `Damit würde dein Abo bis ${ende.toLocaleDateString("de-DE")} laufen — weiter als ` +
+        `${MAX_SUBSCRIPTION_AHEAD_MONTHS} Monate im Voraus geht nicht.` +
+        (laeuftBis ? ` Dein Abo läuft aktuell bis ${laeuftBis}; nimm ein kürzeres Paket oder verlängere später.` : ""),
+    };
+  }
 
   if (target.balance < plan.price) {
     return {

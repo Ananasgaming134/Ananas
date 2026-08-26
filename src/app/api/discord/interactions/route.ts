@@ -80,7 +80,9 @@ import {
   LOAN_STATUS,
   MEMBER_STATUS,
   SITE_NAME,
+  MAX_SUBSCRIPTION_AHEAD_MONTHS,
   SUBSCRIPTION_PLANS,
+  maxSubscriptionEnd,
   formatCoins,
   getSubscriptionPlan,
 } from "@/lib/constants";
@@ -1263,17 +1265,23 @@ function respondWithRenewSelect(member: { balance: number; feePaidUntil: Date | 
   const now = new Date();
   const base = member.feePaidUntil && member.feePaidUntil > now ? member.feePaidUntil : now;
 
+  const grenze = maxSubscriptionEnd(now);
+
   const options = SUBSCRIPTION_PLANS.map((plan) => {
     const end = new Date(base);
     end.setMonth(end.getMonth() + plan.months);
+    const ueberGrenze = end > grenze;
     const affordable = member.balance >= plan.price;
+    const geht = affordable && !ueberGrenze;
     return {
       label: `${plan.label} — ${formatCoins(plan.price)}`,
       value: plan.id,
-      description: affordable
-        ? `Läuft dann bis ${end.toLocaleDateString("de-DE")}${plan.id === member.subscriptionPlan ? " · zuletzt gebucht" : ""}`
-        : `Guthaben reicht nicht (fehlen ${formatCoins(plan.price - member.balance)})`,
-      emoji: { name: affordable ? "✅" : "🚫" },
+      description: ueberGrenze
+        ? `Ginge bis ${end.toLocaleDateString("de-DE")} — mehr als ${MAX_SUBSCRIPTION_AHEAD_MONTHS} Monate im Voraus geht nicht`
+        : affordable
+          ? `Läuft dann bis ${end.toLocaleDateString("de-DE")}${plan.id === member.subscriptionPlan ? " · zuletzt gebucht" : ""}`
+          : `Guthaben reicht nicht (fehlen ${formatCoins(plan.price - member.balance)})`,
+      emoji: { name: geht ? "✅" : "🚫" },
     };
   });
 

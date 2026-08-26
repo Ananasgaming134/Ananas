@@ -1,7 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { TICKET_CATEGORY, closeTicketCore, createTicketCore } from "@/lib/tickets";
-import { formatCoins, getSubscriptionPlan } from "@/lib/constants";
+import {
+  MAX_SUBSCRIPTION_AHEAD_MONTHS,
+  exceedsMaxSubscription,
+  formatCoins,
+  getSubscriptionPlan,
+  subscriptionEndAfter,
+} from "@/lib/constants";
 
 export type PlanChangeResult = { ok: true } | { ok: false; error: string };
 
@@ -21,6 +27,17 @@ export async function requestPlanChangeCore(memberId: string, requestedPlanId: s
 
   const member = await prisma.member.findUnique({ where: { id: memberId } });
   if (!member) return { ok: false, error: "Mitglied nicht gefunden." };
+
+  if (exceedsMaxSubscription(plan, member.feePaidUntil)) {
+    const ende = subscriptionEndAfter(plan, member.feePaidUntil);
+    return {
+      ok: false,
+      error:
+        `Damit würde dein Abo bis ${ende.toLocaleDateString("de-DE")} laufen — weiter als ` +
+        `${MAX_SUBSCRIPTION_AHEAD_MONTHS} Monate im Voraus geht nicht. Nimm ein kürzeres Paket oder beantrage es später.`,
+    };
+  }
+
   if (member.balance < plan.price) {
     return {
       ok: false,

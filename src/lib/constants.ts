@@ -156,3 +156,40 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
 export function getSubscriptionPlan(id: string | null | undefined): SubscriptionPlan | null {
   return SUBSCRIPTION_PLANS.find((p) => p.id === id) ?? null;
 }
+
+/**
+ * Weiter als so viele Monate darf ein Abo nie im Voraus laufen. Ohne diese
+ * Grenze koennte man sich durch mehrfaches Verlaengern Jahre am Stueck
+ * sichern - gewollt ist ein Abo, das regelmaessig neu entschieden wird.
+ */
+export const MAX_SUBSCRIPTION_AHEAD_MONTHS = 6;
+
+/** Spaetestes Laufzeitende, das ab jetzt zulaessig ist. */
+export function maxSubscriptionEnd(from: Date = new Date()): Date {
+  const grenze = new Date(from);
+  grenze.setMonth(grenze.getMonth() + MAX_SUBSCRIPTION_AHEAD_MONTHS);
+  return grenze;
+}
+
+/**
+ * Bis wann ein Paket laufen wuerde, wenn man es jetzt bucht - die Dauer kommt
+ * immer oben auf eine noch laufende Restzeit drauf.
+ */
+export function subscriptionEndAfter(
+  plan: SubscriptionPlan,
+  feePaidUntil: Date | null,
+  now: Date = new Date()
+): Date {
+  const basis = feePaidUntil && feePaidUntil > now ? new Date(feePaidUntil) : new Date(now);
+  basis.setMonth(basis.getMonth() + plan.months);
+  return basis;
+}
+
+/** Ob ein Paket die Grenze reissen wuerde. */
+export function exceedsMaxSubscription(
+  plan: SubscriptionPlan,
+  feePaidUntil: Date | null,
+  now: Date = new Date()
+): boolean {
+  return subscriptionEndAfter(plan, feePaidUntil, now) > maxSubscriptionEnd(now);
+}

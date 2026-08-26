@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { purchasePlan, type PlanChangeState } from "@/app/actions/planChanges";
-import { formatCoins, type SubscriptionPlan } from "@/lib/constants";
+import { MAX_SUBSCRIPTION_AHEAD_MONTHS, formatCoins, type SubscriptionPlan } from "@/lib/constants";
 
 const initialState: PlanChangeState = null;
 
@@ -26,6 +26,8 @@ export default function PlanCard({
   hatAbo,
   hervorgehoben,
   ersparnis,
+  ueberGrenze,
+  wuerdeLaufenBis,
 }: {
   plan: SubscriptionPlan;
   index: number;
@@ -34,6 +36,10 @@ export default function PlanCard({
   hatAbo: boolean;
   hervorgehoben: boolean;
   ersparnis: number;
+  /** Wuerde dieses Paket ueber die Sechs-Monats-Grenze hinausgehen? */
+  ueberGrenze: boolean;
+  /** Bis wann es laufen wuerde - fuer die Erklaerung am gesperrten Knopf. */
+  wuerdeLaufenBis: string;
 }) {
   const [state, formAction, pending] = useActionState(purchasePlan, initialState);
 
@@ -47,11 +53,13 @@ export default function PlanCard({
   // "verlaengern", egal welches Paket man nimmt.
   const knopfText = pending
     ? "Wird gebucht..."
-    : !reicht
-      ? `Es fehlen ${formatCoins(fehlt)}`
-      : hatAbo
-        ? `Um ${plan.label} verlängern`
-        : "Jetzt buchen";
+    : ueberGrenze
+      ? `Über ${MAX_SUBSCRIPTION_AHEAD_MONTHS} Monate hinaus`
+      : !reicht
+        ? `Es fehlen ${formatCoins(fehlt)}`
+        : hatAbo
+          ? `Um ${plan.label} verlängern`
+          : "Jetzt buchen";
 
   return (
     // Aeusserer Rahmen ohne overflow-hidden: das Band ragt bewusst ueber die
@@ -109,7 +117,7 @@ export default function PlanCard({
         <div className="mt-auto pt-5">
           <button
             type="submit"
-            disabled={pending || !reicht}
+            disabled={pending || !reicht || ueberGrenze}
             className={`w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed ${
               hervorgehoben
                 ? "bg-accent text-black hover:brightness-110 disabled:opacity-50"
@@ -119,6 +127,13 @@ export default function PlanCard({
             {knopfText}
           </button>
 
+          {ueberGrenze && (
+            <p className="mt-2 text-center text-[11px] leading-snug text-muted">
+              Dein Abo würde damit bis {wuerdeLaufenBis} laufen. Weiter als{" "}
+              {MAX_SUBSCRIPTION_AHEAD_MONTHS} Monate im Voraus geht nicht — nimm ein kürzeres Paket
+              oder verlängere später.
+            </p>
+          )}
           {state?.error && <p className="mt-2 text-xs text-danger">❌ {state.error}</p>}
           {state?.ok && (
             <p className="mt-2 text-xs text-accent-2">

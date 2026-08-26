@@ -4,7 +4,13 @@ import { prisma } from "@/lib/prisma";
 import PlanChangeRequestForm from "@/components/PlanChangeRequestForm";
 import PlanCard from "@/components/PlanCard";
 import GraceCountdown from "@/components/GraceCountdown";
-import { SUBSCRIPTION_PLANS, formatCoins } from "@/lib/constants";
+import {
+  MAX_SUBSCRIPTION_AHEAD_MONTHS,
+  SUBSCRIPTION_PLANS,
+  exceedsMaxSubscription,
+  formatCoins,
+  subscriptionEndAfter,
+} from "@/lib/constants";
 
 export default async function AboPage() {
   const member = await requireMember();
@@ -61,6 +67,8 @@ export default async function AboPage() {
               hatAbo={Boolean(member.subscriptionPlan)}
               hervorgehoben={plan.id === SUBSCRIPTION_PLANS[SUBSCRIPTION_PLANS.length - 1].id}
               ersparnis={Math.round((1 - proMonat / basis) * 100)}
+              ueberGrenze={exceedsMaxSubscription(plan, member.feePaidUntil)}
+              wuerdeLaufenBis={subscriptionEndAfter(plan, member.feePaidUntil).toLocaleDateString("de-DE")}
             />
           );
         })}
