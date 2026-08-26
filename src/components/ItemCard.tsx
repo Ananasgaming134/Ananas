@@ -1,4 +1,4 @@
-import { borrowItem, returnLoan } from "@/app/actions/loans";
+import LoanButton from "@/components/LoanButton";
 import LoanCountdown from "@/components/LoanCountdown";
 import ReborrowCooldown from "@/components/ReborrowCooldown";
 import AvailabilityBadge from "@/components/AvailabilityBadge";
@@ -110,14 +110,13 @@ export default function ItemCard({
                   <span className="text-muted">Ausgeliehen</span>
                 )}
               </p>
-              <form action={returnLoan.bind(null, myLoan.id)}>
-                <button
-                  type="submit"
-                  className="w-full rounded-lg border border-accent-2/40 bg-accent-2/10 px-3 py-2 text-sm font-medium text-accent-2 transition hover:bg-accent-2/20"
-                >
-                  Zurückgeben
-                </button>
-              </form>
+              <LoanButton
+                art="zurueckgeben"
+                id={myLoan.id}
+                className="w-full rounded-lg border border-accent-2/40 bg-accent-2/10 px-3 py-2 text-sm font-medium text-accent-2 transition hover:bg-accent-2/20 disabled:cursor-wait disabled:opacity-70"
+              >
+                Zurückgeben
+              </LoanButton>
             </>
           ) : sperren.gesperrt ? (
             <button
@@ -163,14 +162,13 @@ export default function ItemCard({
               </button>
             </div>
           ) : available > 0 ? (
-            <form action={borrowItem.bind(null, item.id)}>
-              <button
-                type="submit"
-                className="w-full rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-black transition hover:brightness-110"
-              >
-                Ausleihen
-              </button>
-            </form>
+            <LoanButton
+              art="ausleihen"
+              id={item.id}
+              className="w-full rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:cursor-wait disabled:opacity-70"
+            >
+              Ausleihen
+            </LoanButton>
           ) : (
             <button
               type="button"

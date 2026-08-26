@@ -920,3 +920,20 @@ a.partner-card:hover {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Kleiner Kreisel im Ausleih-Knopf, solange gebucht wird. */
+@keyframes loan-spin {
+  to { transform: rotate(360deg); }
+}
+.loan-spinner {
+  display: inline-block;
+  height: 0.85rem;
+  width: 0.85rem;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: loan-spin 0.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .loan-spinner { animation-duration: 2s; }
+}
