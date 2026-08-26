@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { checkRoleLive } from "@/lib/discord";
-import { logAction } from "@/lib/audit";
+import { syncMemberRoleFromDiscord } from "@/lib/accessControl";
 import { MEMBER_STATUS } from "@/lib/constants";
 
 /**
@@ -28,41 +27,16 @@ export async function GET() {
     return NextResponse.json({ ok: false, reason: "access-revoked" });
   }
 
-  const result = await checkRoleLive(discordId);
+  // Gemeinsamer Zwischenspeicher mit dem Seitenaufruf: derselbe Nutzer loest
+  // damit hoechstens eine Discord-Abfrage pro Minute aus, statt bei jedem
+  // Takt eine neue. Das war die Hauptlast auf Discords Limit von fuenf
+  // Abfragen pro Sekunde - und damit die Ursache der langen Wartezeiten.
+  const status = await syncMemberRoleFromDiscord(member);
 
-  if (result.status === "error") {
-    // Discord-API kurzzeitig nicht erreichbar - Sitzung nicht anfassen.
-    return NextResponse.json({ ok: true });
-  }
-
-  if (result.status === "revoked") {
-    await prisma.member.update({
-      where: { discordId },
-      data: {
-        status: MEMBER_STATUS.REVOKED,
-        revokedAt: new Date(),
-        revokedReason: "Automatisch erkannt: keine gueltige LeihCenter-Rolle mehr auf Discord.",
-      },
-    });
-    await logAction({
-      actorId: member.id,
-      targetId: member.id,
-      action: "ACCESS_AUTO_REVOKED",
-      details: "Live-Rollenpruefung: Nutzer hat keine gueltige LeihCenter-Rolle mehr auf Discord.",
-    });
-    return NextResponse.json({ ok: false, reason: "role-revoked" });
-  }
-
-  if (result.role !== member.role) {
-    await prisma.member.update({ where: { discordId }, data: { role: result.role } });
-    await logAction({
-      actorId: member.id,
-      targetId: member.id,
-      action: "ROLE_AUTO_CHANGED",
-      details: `Live-Rollenpruefung: Rolle hat sich auf Discord geaendert (${member.role} -> ${result.role}). Sitzung wird zur Neuanmeldung aufgefordert.`,
-    });
-    return NextResponse.json({ ok: false, reason: "role-changed" });
-  }
+  // "unknown" heisst: Discord war kurz nicht erreichbar. Dann die Sitzung in
+  // Ruhe lassen und beim naechsten Takt erneut versuchen.
+  if (status === "revoked") return NextResponse.json({ ok: false, reason: "role-revoked" });
+  if (status === "changed") return NextResponse.json({ ok: false, reason: "role-changed" });
 
   return NextResponse.json({ ok: true });
 }

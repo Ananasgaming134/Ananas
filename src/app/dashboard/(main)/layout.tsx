@@ -6,6 +6,7 @@ import SignOutButton from "@/components/SignOutButton";
 import RoleBadge from "@/components/RoleBadge";
 import AnimatedBackground from "@/components/AnimatedBackground";
 import RoleWatcher from "@/components/RoleWatcher";
+import FreshOnFocus from "@/components/FreshOnFocus";
 import AreaScope from "@/components/AreaScope";
 import { SITE_NAME } from "@/lib/constants";
 
@@ -15,6 +16,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <AreaScope>
       <RoleWatcher />
+      <FreshOnFocus />
       <AnimatedBackground />
 
       <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6 sm:px-6">

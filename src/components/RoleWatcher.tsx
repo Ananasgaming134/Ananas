@@ -3,13 +3,19 @@
 import { useEffect, useRef } from "react";
 import { signOut } from "next-auth/react";
 
-const CHECK_INTERVAL_MS = 10_000;
+const CHECK_INTERVAL_MS = 60_000;
 
 /**
- * Prueft alle 10 Sekunden im Hintergrund per /api/auth/role-check, ob die
- * Discord-Rolle des eingeloggten Nutzers noch gueltig und unveraendert ist.
- * Bei Entzug oder Aenderung wird sofort abgemeldet, damit nie mit veralteten
- * Rechten weitergearbeitet werden kann. Rendert nichts sichtbares.
+ * Prueft im Hintergrund per /api/auth/role-check, ob die Discord-Rolle des
+ * eingeloggten Nutzers noch gueltig und unveraendert ist. Bei Entzug oder
+ * Aenderung wird sofort abgemeldet, damit nie mit veralteten Rechten
+ * weitergearbeitet werden kann. Rendert nichts sichtbares.
+ *
+ * Einmal pro Minute reicht: eine Rollenaenderung faellt der dauerhaften
+ * Gateway-Verbindung sofort auf und wird dort schon in den Datensatz
+ * geschrieben - dieser Takt ist nur das Netz fuer offene Tabs. Frueher lief
+ * er alle 10 Sekunden und hat mit jedem Tab eine eigene Discord-Abfrage
+ * ausgeloest.
  */
 export default function RoleWatcher() {
   const loggingOutRef = useRef(false);
@@ -29,7 +35,7 @@ export default function RoleWatcher() {
           await signOut({ callbackUrl: "/login" });
         }
       } catch {
-        // Netzwerkfehler bei der Pruefung selbst - nicht abmelden, naechster Versuch in 10s.
+        // Netzwerkfehler bei der Pruefung selbst - nicht abmelden, naechster Versuch spaeter.
       }
     }
 

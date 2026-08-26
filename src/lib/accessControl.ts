@@ -231,7 +231,18 @@ export type EnforceResult = {
  * Staff (Aufsicht/Owner) ist von 1 und 2 ausgenommen. Nichts davon trifft
  * bereits gesperrte oder gebannte Mitglieder erneut.
  */
-export async function enforceAccessRules(): Promise<EnforceResult> {
+export async function enforceAccessRules(
+  /**
+   * Ob die Rollen aller Mitglieder live gegen Discord geprueft werden. Das
+   * kostet eine Abfrage pro Mitglied und lief frueher jede Minute - bei
+   * dutzenden Mitgliedern reisst das Discords Limit von fuenf Abfragen pro
+   * Sekunde und bremst dadurch die ganze Seite aus. Rollenentzug meldet die
+   * Gateway-Verbindung ohnehin in dem Moment, in dem er passiert; dieser
+   * Rundumschlag ist nur das Netz fuer den Fall, dass die Verbindung mal weg
+   * war - stuendlich reicht dafuer voellig.
+   */
+  rollenPruefen = false
+): Promise<EnforceResult> {
   const now = new Date();
   const result: EnforceResult = { expired: 0, graceExpired: 0, roleLost: 0 };
 
@@ -240,7 +251,7 @@ export async function enforceAccessRules(): Promise<EnforceResult> {
   });
 
   const kundeRoleIds = roleIdsFromEnv("DISCORD_ROLE_KUNDE");
-  const canCheckRoles = Boolean(DISCORD_GUILD_ID && kundeRoleIds.length > 0);
+  const canCheckRoles = rollenPruefen && Boolean(DISCORD_GUILD_ID && kundeRoleIds.length > 0);
 
   for (const member of members) {
     if (isStaff(member)) continue;
@@ -296,7 +307,7 @@ export async function enforceAccessRules(): Promise<EnforceResult> {
 // Seitenaufruf eine Discord-API-Abfrage ausloesen. 20s ist kurz genug, dass
 // ein Rollenentzug praktisch sofort greift (der Gateway-Handler reagiert
 // ohnehin in Echtzeit), und lang genug, um Rate-Limits zu vermeiden.
-const ROLE_CACHE_MS = 15_000;
+const ROLE_CACHE_MS = 60_000;
 // Gecacht wird die in Discord GEFUNDENE Rolle, nicht das Ergebnis des
 // Vergleichs. Sonst wuerde eine Abweichung zwischen Datenbank und Discord
 // innerhalb des Cache-Fensters uebersehen.

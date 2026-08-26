@@ -39,7 +39,10 @@ export async function GET(request: Request) {
   // Zugangsregeln laufen bei JEDEM Durchlauf (also minuetlich) mit - abgelaufene
   // Abos, verstrichene Zahlungsfristen und in Discord entfernte Rollen sollen
   // nicht bis zur naechsten vollen Stunde weiterbestehen.
-  const access = await enforceAccessRules().catch((err) => ({ error: String(err) }));
+  // Abgelaufene Abos und verstrichene Fristen jede Minute; die Rollen-
+  // Rundumpruefung (eine Discord-Abfrage pro Mitglied) nur stuendlich.
+  const stuendlich = url.searchParams.get("hourly") === "1" || new Date().getMinutes() === 0;
+  const access = await enforceAccessRules(stuendlich).catch((err) => ({ error: String(err) }));
 
   // Unbeantwortete Schliessanfragen greifen nach 24 Stunden automatisch -
   // laeuft minuetlich mit, damit die Frist auf die Minute genau endet.
@@ -57,7 +60,7 @@ export async function GET(request: Request) {
   const expiryNotices = await sendExpiryNotices().catch((err) => ({ error: String(err) }));
   const blacklistExpiry = await expireBlacklistEntries().catch((err) => ({ error: String(err) }));
 
-  const hourly = url.searchParams.get("hourly") === "1" || new Date().getMinutes() === 0;
+  const hourly = stuendlich;
   let subscriptions: unknown = "übersprungen";
   let nameSync: unknown = "übersprungen";
 
