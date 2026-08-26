@@ -2,7 +2,7 @@ import PageHeader from "@/components/PageHeader";
 import { notFound } from "next/navigation";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { toggleItemAvailability, updateItem } from "@/app/actions/items";
+import { deleteItem, toggleItemAvailability, updateItem } from "@/app/actions/items";
 import ItemForm from "@/components/ItemForm";
 import { ROLES } from "@/lib/constants";
 
@@ -86,6 +86,26 @@ export default async function ItemBearbeitenPage({
             </form>
           </>
         )}
+      </div>
+
+      {/* Loeschen steht hier statt in der Liste: dort war die Zeile zu breit
+          fuer den Kasten, und ein Verklicken in einer langen Liste waere bei
+          einer nicht umkehrbaren Aktion besonders aergerlich. */}
+      <div className="card border-danger/30 p-5">
+        <h2 className="text-sm font-semibold text-danger">Item löschen</h2>
+        <p className="mt-1 text-sm text-muted">
+          Entfernt <span className="text-foreground">{item.name}</span> dauerhaft aus dem Bestand,
+          samt Bild und Ausleihhistorie. Das lässt sich nicht rückgängig machen. Soll das Item nur
+          vorübergehend raus, sperr es lieber oben.
+        </p>
+        <form action={deleteItem.bind(null, item.id)} className="mt-4">
+          <button
+            type="submit"
+            className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-2 text-sm font-medium text-danger transition hover:bg-danger/20"
+          >
+            Endgültig löschen
+          </button>
+        </form>
       </div>
     </div>
   );

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import PageHeader from "@/components/PageHeader";
-import { deleteItem, refreshItemPrices, toggleItemAvailability } from "@/app/actions/items";
+import { refreshItemPrices, toggleItemAvailability } from "@/app/actions/items";
 import { formatCoins, PRICE_STATUS, ROLES } from "@/lib/constants";
 
 export default async function VerwaltenPage({
@@ -133,7 +133,7 @@ export default async function VerwaltenPage({
           Aktionen-Spalte vorher schlicht abgeschnitten und die Knoepfe
           dahinter nicht erreichbar. */}
       <div className="card overflow-x-auto">
-        <table className="w-full min-w-[52rem] text-left text-sm">
+        <table className="w-full min-w-[44rem] text-left text-sm">
           <thead className="border-b border-border bg-surface-2/60 text-xs uppercase text-muted">
             <tr>
               <th className="px-4 py-3 font-medium">Item</th>
@@ -206,14 +206,6 @@ export default async function VerwaltenPage({
                             }`}
                           >
                             {item.unavailable ? "Freigeben" : "Sperren"}
-                          </button>
-                        </form>
-                        <form action={deleteItem.bind(null, item.id)}>
-                          <button
-                            type="submit"
-                            className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs font-medium text-danger transition hover:bg-danger/20"
-                          >
-                            Löschen
                           </button>
                         </form>
                       </div>
