@@ -156,6 +156,9 @@ export default async function AboPage() {
           Zeit wird beim Fortsetzen automatisch an deine Laufzeit drangehängt. Ein Verstoß gegen die
           allgemeinen Regeln kann dagegen zum sofortigen, entschädigungslosen Ausschluss führen.
         </p>
+        <p className="text-muted">
+          Beim Wochen-Paket geht das nicht — Pausieren gibt es erst ab einem Monat Laufzeit.
+        </p>
       </div>
     </div>
   );

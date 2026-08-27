@@ -16,8 +16,10 @@ const MERKMALE = [
   "Kompletter Item-Bestand",
   "Ausleihen über Website und Discord",
   "Erinnerungen per Direktnachricht",
-  "Pausieren jederzeit per Ticket",
 ];
+
+/** Pausieren gibt es erst ab einem Monat - eine Woche ist dafuer zu kurz. */
+const MERKMAL_PAUSE = "Pausieren jederzeit per Ticket";
 
 /**
  * Eine Paket-Karte, die man direkt buchen kann - die Auswahl passiert also
@@ -108,7 +110,7 @@ export default function PlanCard({
         )}
 
         <ul className="mt-5 space-y-2 border-t border-border pt-4 text-xs text-muted">
-          {MERKMALE.map((merkmal) => (
+          {(plan.days ? MERKMALE : [...MERKMALE, MERKMAL_PAUSE]).map((merkmal) => (
             <li key={merkmal} className="flex items-start gap-2">
               <span className="mt-0.5 text-accent-2" aria-hidden>
                 ✓

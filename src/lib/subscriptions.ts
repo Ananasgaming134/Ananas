@@ -361,6 +361,17 @@ export async function pauseMemberCore(
   if (!target) return { ok: false, error: "Mitglied nicht gefunden." };
   if (target.pausedAt) return { ok: false, error: "Abo ist bereits pausiert." };
 
+  // Wochen-Pakete lassen sich nicht pausieren - bei sieben Tagen Laufzeit
+  // waere das nur Verwaltungsaufwand ohne Nutzen. Steht so auch auf der
+  // Paket-Karte, deshalb hier auch wirklich verhindern.
+  const laufendesPaket = getSubscriptionPlan(target.subscriptionPlan);
+  if (laufendesPaket?.days) {
+    return {
+      ok: false,
+      error: `Das Paket „${laufendesPaket.label}" lässt sich nicht pausieren - das geht erst ab einem Monat Laufzeit.`,
+    };
+  }
+
   await prisma.member.update({
     where: { id: memberId },
     data: { pausedAt: new Date(), pauseReason: reason, pausedById: actorId, pauseTicketId: ticketId },
