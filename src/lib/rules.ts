@@ -1,22 +1,55 @@
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
-import { DISCORD_BOT_TOKEN, RULES_CHANNEL_ID } from "@/lib/discord";
+import { DISCORD_BOT_TOKEN, INFO_CHANNEL_ID, RULES_CHANNEL_ID } from "@/lib/discord";
+import { INFO_VORLAGE } from "@/lib/infoText";
 
 const DISCORD_API = "https://discord.com/api/v10";
 /** Discord erlaubt 2000 Zeichen pro Nachricht - das Regelwerk wird deshalb aufgeteilt. */
 const MAX_MESSAGE_CHARS = 1900;
 
 /**
- * Das Regelwerk liegt als EIN Datensatz in der Datenbank (key "default"),
- * wird auf der Website angezeigt und dort von Ownern bearbeitet. Beim
- * Speichern wird es in den Discord-Regelwerk-Kanal gespiegelt - dabei werden
- * immer DIESELBEN Nachrichten aktualisiert statt neue zu posten.
+ * Gepflegte Texte, die auf der Website bearbeitet und zugleich in einen
+ * Discord-Kanal gespiegelt werden. Beide funktionieren gleich: EIN Datensatz
+ * je Schluessel, beim Speichern werden immer DIESELBEN Discord-Nachrichten
+ * aktualisiert statt neue zu posten.
  *
  * Mehrere Message-IDs, weil Discord bei 2000 Zeichen abschneidet: der Text
  * wird an Absaetzen in Bloecke geteilt, die IDs kommagetrennt gespeichert.
  */
+export const TEXTE = {
+  regelwerk: {
+    key: "default",
+    label: "Regelwerk",
+    channelId: RULES_CHANNEL_ID,
+    vorlage: "",
+  },
+  info: {
+    key: "leihcenter-info",
+    label: "Über das LeihCenter",
+    channelId: INFO_CHANNEL_ID,
+    vorlage: INFO_VORLAGE,
+  },
+} as const;
+
+export type TextSchluessel = keyof typeof TEXTE;
+
+/**
+ * Holt einen Text. Fehlt er noch, wird er beim ersten Aufruf mit seiner
+ * Vorlage angelegt - so steht sofort etwas Sinnvolles da, statt einer leeren
+ * Seite.
+ */
+export async function getText(schluessel: TextSchluessel) {
+  const doku = TEXTE[schluessel];
+  const vorhanden = await prisma.ruleSet.findUnique({ where: { key: doku.key } });
+  if (vorhanden) return vorhanden;
+  if (!doku.vorlage) return null;
+
+  return prisma.ruleSet.create({ data: { key: doku.key, content: doku.vorlage } });
+}
+
+/** Kurzform fuer das Regelwerk - der urspruengliche Anwendungsfall. */
 export async function getRuleSet() {
-  return prisma.ruleSet.findUnique({ where: { key: "default" } });
+  return getText("regelwerk");
 }
 
 /** Teilt den Text an Absaetzen in Discord-taugliche Bloecke. */
@@ -52,7 +85,7 @@ function splitIntoChunks(text: string): string[] {
   }
 
   if (current) chunks.push(current);
-  return chunks.length > 0 ? chunks : ["(noch kein Regelwerk hinterlegt)"];
+  return chunks.length > 0 ? chunks : ["(noch kein Text hinterlegt)"];
 }
 
 export type RulesResult = { ok: true; messageIds: string[] } | { ok: false; error: string };
@@ -62,16 +95,20 @@ export type RulesResult = { ok: true; messageIds: string[] } | { ok: false; erro
  * bearbeitet; wird der Text kuerzer, werden ueberzaehlige Nachrichten
  * geloescht, wird er laenger, kommen neue dazu.
  */
-export async function syncRulesToDiscord(content: string): Promise<RulesResult> {
+export async function syncRulesToDiscord(
+  content: string,
+  schluessel: TextSchluessel = "regelwerk"
+): Promise<RulesResult> {
+  const doku = TEXTE[schluessel];
   if (!DISCORD_BOT_TOKEN) return { ok: false, error: "Kein Bot-Token konfiguriert." };
-  if (!RULES_CHANNEL_ID) return { ok: false, error: "Kein Regelwerk-Kanal konfiguriert." };
+  if (!doku.channelId) return { ok: false, error: `Kein Kanal für „${doku.label}" konfiguriert.` };
 
   const headers = {
     Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
     "Content-Type": "application/json",
   };
 
-  const existing = await getRuleSet();
+  const existing = await prisma.ruleSet.findUnique({ where: { key: doku.key } });
   const oldIds = (existing?.discordMessageId ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const chunks = splitIntoChunks(content);
   const newIds: string[] = [];
@@ -81,7 +118,7 @@ export async function syncRulesToDiscord(content: string): Promise<RulesResult> 
     const oldId = oldIds[i];
 
     if (oldId) {
-      const res = await fetch(`${DISCORD_API}/channels/${RULES_CHANNEL_ID}/messages/${oldId}`, {
+      const res = await fetch(`${DISCORD_API}/channels/${doku.channelId}/messages/${oldId}`, {
         method: "PATCH",
         headers,
         body,
@@ -93,7 +130,7 @@ export async function syncRulesToDiscord(content: string): Promise<RulesResult> 
       // Nachricht wurde geloescht -> unten neu posten.
     }
 
-    const res = await fetch(`${DISCORD_API}/channels/${RULES_CHANNEL_ID}/messages`, {
+    const res = await fetch(`${DISCORD_API}/channels/${doku.channelId}/messages`, {
       method: "POST",
       headers,
       body,
@@ -108,7 +145,7 @@ export async function syncRulesToDiscord(content: string): Promise<RulesResult> 
 
   // Ueberzaehlige alte Nachrichten entfernen (Text ist kuerzer geworden).
   for (const stale of oldIds.slice(chunks.length)) {
-    await fetch(`${DISCORD_API}/channels/${RULES_CHANNEL_ID}/messages/${stale}`, {
+    await fetch(`${DISCORD_API}/channels/${doku.channelId}/messages/${stale}`, {
       method: "DELETE",
       headers,
     }).catch(() => {});
@@ -124,22 +161,24 @@ export async function syncRulesToDiscord(content: string): Promise<RulesResult> 
  */
 export async function saveRuleSetCore(
   content: string,
-  actorId: string
+  actorId: string,
+  schluessel: TextSchluessel = "regelwerk"
 ): Promise<{ ok: true; discordOk: boolean; discordError?: string } | { ok: false; error: string }> {
+  const doku = TEXTE[schluessel];
   const trimmed = content.trim();
-  if (!trimmed) return { ok: false, error: "Das Regelwerk darf nicht leer sein." };
+  if (!trimmed) return { ok: false, error: `„${doku.label}" darf nicht leer sein.` };
 
-  const sync = await syncRulesToDiscord(trimmed);
+  const sync = await syncRulesToDiscord(trimmed, schluessel);
 
   await prisma.ruleSet.upsert({
-    where: { key: "default" },
+    where: { key: doku.key },
     update: {
       content: trimmed,
       updatedById: actorId,
       ...(sync.ok ? { discordMessageId: sync.messageIds.join(",") } : {}),
     },
     create: {
-      key: "default",
+      key: doku.key,
       content: trimmed,
       updatedById: actorId,
       discordMessageId: sync.ok ? sync.messageIds.join(",") : null,
@@ -150,8 +189,8 @@ export async function saveRuleSetCore(
     actorId,
     action: "RULES_UPDATED",
     details: sync.ok
-      ? "Regelwerk gespeichert und in Discord aktualisiert."
-      : `Regelwerk gespeichert, Discord-Aktualisierung fehlgeschlagen: ${sync.error}`,
+      ? `„${doku.label}" gespeichert und in Discord aktualisiert.`
+      : `„${doku.label}" gespeichert, Discord-Aktualisierung fehlgeschlagen: ${sync.error}`,
   });
 
   return sync.ok

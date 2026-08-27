@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { saveRules, type RulesFormState } from "@/app/actions/rules";
+import type { TextSchluessel } from "@/lib/rules";
 
 const initialState: RulesFormState = null;
 
@@ -11,8 +12,14 @@ const initialState: RulesFormState = null;
  * **fett**, > Zitat, - Liste). Eine einfache Vorschau zeigt, wie es
  * ungefaehr aussehen wird.
  */
-export default function RulesEditor({ initialContent }: { initialContent: string }) {
-  const [state, formAction, pending] = useActionState(saveRules, initialState);
+export default function RulesEditor({
+  initialContent,
+  schluessel = "regelwerk",
+}: {
+  initialContent: string;
+  schluessel?: TextSchluessel;
+}) {
+  const [state, formAction, pending] = useActionState(saveRules.bind(null, schluessel), initialState);
   const [content, setContent] = useState(initialContent);
 
   return (

@@ -39,6 +39,10 @@ export const ABO_CHANNEL_ID = process.env.DISCORD_ABO_CHANNEL_ID ?? "14697444134
 /** Kanal, in dem das Regelwerk gespiegelt wird (immer dieselbe Nachricht). */
 export const RULES_CHANNEL_ID = process.env.DISCORD_RULES_CHANNEL_ID ?? "1469716521965195396";
 
+/** Kanal fuer den Info-Text ueber das LeihCenter (Ablauf, Voraussetzungen, Preise). */
+export const INFO_CHANNEL_ID =
+  process.env.DISCORD_INFO_CHANNEL_ID ?? "1469744773157093386";
+
 /** Kanal, in dem Eintraege der roten Liste dokumentiert werden. */
 /**
  * Kanal fuer ueberzogene Ausleihen - wer seine Frist reissen laesst, taucht

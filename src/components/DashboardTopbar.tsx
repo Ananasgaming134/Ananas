@@ -18,6 +18,7 @@ const ROUTE_TITLES: RouteTitle[] = [
   { path: "/dashboard/anleitung", title: "Anleitung" },
   { path: "/dashboard/hilfe", title: "Hilfe" },
   { path: "/dashboard/regelwerk", title: "Regelwerk" },
+  { path: "/dashboard/info", title: "Über das LeihCenter" },
   { path: "/dashboard/akte", title: "Profil" },
   { path: "/dashboard/verwaltung/statistik", title: "Statistik" },
   { path: "/dashboard/verwaltung/items/neu", title: "Neues Item" },
@@ -34,6 +35,7 @@ const ROUTE_TITLES: RouteTitle[] = [
   { path: "/dashboard/verwaltung/ausleihen", title: "Derzeit ausgeliehen" },
   { path: "/dashboard/verwaltung/kooperationen", title: "Kooperationen" },
   { path: "/dashboard/verwaltung/impressum", title: "Impressum" },
+  { path: "/dashboard/verwaltung/info", title: "Über das LeihCenter" },
   { path: "/dashboard/verwaltung/regelwerk", title: "Regelwerk" },
   { path: "/dashboard/verwaltung", title: "Verwaltung", exact: true },
 ];
