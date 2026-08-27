@@ -95,17 +95,17 @@ export default function PlanCard({
         )}
 
         <p className="text-base font-semibold">{plan.label}</p>
-        <p className="mt-3 text-3xl font-bold tracking-tight text-accent">
+        <p className="mt-3 text-2xl font-bold tracking-tight text-accent tabular-nums">
           {formatCoins(plan.price)}
         </p>
         <p className="mt-1 text-xs text-muted">
           {plan.days ? `${formatCoins(plan.price)} ${planRateLabel(plan)}` : `${formatCoins(proMonat)} / Monat`}
-          {ersparnis > 0 && (
-            <span className="ml-1.5 rounded-full bg-accent-2/15 px-1.5 py-0.5 font-medium text-accent-2">
-              -{ersparnis}%
-            </span>
-          )}
         </p>
+        {ersparnis > 0 && (
+          <span className="mt-1.5 inline-block self-start whitespace-nowrap rounded-full bg-accent-2/15 px-2 py-0.5 text-[11px] font-medium text-accent-2">
+            −{ersparnis}% gegenüber dem Wochenpreis
+          </span>
+        )}
 
         <ul className="mt-5 space-y-2 border-t border-border pt-4 text-xs text-muted">
           {MERKMALE.map((merkmal) => (
