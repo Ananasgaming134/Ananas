@@ -103,7 +103,7 @@ export default function PlanCard({
         </p>
         {ersparnis > 0 && (
           <span className="mt-1.5 inline-block self-start whitespace-nowrap rounded-full bg-accent-2/15 px-2 py-0.5 text-[11px] font-medium text-accent-2">
-            −{ersparnis}% gegenüber dem Wochenpreis
+            −{ersparnis}% pro Monat
           </span>
         )}
 
