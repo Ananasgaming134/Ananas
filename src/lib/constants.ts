@@ -142,16 +142,52 @@ export function formatCoins(amount: number | null | undefined): string {
 
 export type SubscriptionPlan = {
   id: string;
-  months: number;
   price: number;
   label: string;
+  /** Laufzeit in Monaten. Genau eines von months/days ist gesetzt. */
+  months?: number;
+  /** Laufzeit in Tagen - fuer Pakete unterhalb eines Monats. */
+  days?: number;
 };
 
+// Aufsteigend nach Laufzeit - die Reihenfolge bestimmt die Anzeige, und das
+// erste Paket dient als Vergleichsmassstab fuer die Ersparnis-Angabe.
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
+  { id: "1_WEEK", days: 7, price: 1_500_000, label: "1 Woche" },
   { id: "1_MONTH", months: 1, price: 5_000_000, label: "1 Monat" },
   { id: "3_MONTHS", months: 3, price: 12_500_000, label: "3 Monate" },
   { id: "6_MONTHS", months: 6, price: 22_500_000, label: "6 Monate" },
 ];
+
+/** Haengt die Laufzeit eines Pakets an ein Datum an. */
+export function addPlanDuration(from: Date, plan: SubscriptionPlan): Date {
+  const ende = new Date(from);
+  if (plan.days) ende.setDate(ende.getDate() + plan.days);
+  else ende.setMonth(ende.getMonth() + (plan.months ?? 0));
+  return ende;
+}
+
+/** Zieht die Laufzeit eines Pakets von einem Datum ab (Beginn der Periode). */
+export function subtractPlanDuration(from: Date, plan: SubscriptionPlan): Date {
+  const start = new Date(from);
+  if (plan.days) start.setDate(start.getDate() - plan.days);
+  else start.setMonth(start.getMonth() - (plan.months ?? 0));
+  return start;
+}
+
+/**
+ * Preis auf 30 Tage hochgerechnet - nur fuer den Preisvergleich zwischen den
+ * Paketen, nicht fuer die Abrechnung.
+ */
+export function planMonthlyRate(plan: SubscriptionPlan): number {
+  const tage = plan.days ?? (plan.months ?? 0) * 30;
+  return tage > 0 ? (plan.price / tage) * 30 : plan.price;
+}
+
+/** "pro Woche" bzw. "pro Monat" - passend zur Laufzeit des Pakets. */
+export function planRateLabel(plan: SubscriptionPlan): string {
+  return plan.days ? "für 7 Tage" : "pro Monat";
+}
 
 export function getSubscriptionPlan(id: string | null | undefined): SubscriptionPlan | null {
   return SUBSCRIPTION_PLANS.find((p) => p.id === id) ?? null;
@@ -181,8 +217,7 @@ export function subscriptionEndAfter(
   now: Date = new Date()
 ): Date {
   const basis = feePaidUntil && feePaidUntil > now ? new Date(feePaidUntil) : new Date(now);
-  basis.setMonth(basis.getMonth() + plan.months);
-  return basis;
+  return addPlanDuration(basis, plan);
 }
 
 /** Ob ein Paket die Grenze reissen wuerde. */

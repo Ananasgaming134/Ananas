@@ -9,6 +9,7 @@ import {
   SUBSCRIPTION_PLANS,
   exceedsMaxSubscription,
   formatCoins,
+  planMonthlyRate,
   subscriptionEndAfter,
 } from "@/lib/constants";
 
@@ -53,10 +54,10 @@ export default async function AboPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-5 pt-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 pt-3 sm:grid-cols-2 lg:grid-cols-4">
         {SUBSCRIPTION_PLANS.map((plan, i) => {
-          const proMonat = plan.price / plan.months;
-          const basis = SUBSCRIPTION_PLANS[0].price / SUBSCRIPTION_PLANS[0].months;
+          const proMonat = planMonthlyRate(plan);
+          const basis = planMonthlyRate(SUBSCRIPTION_PLANS[0]);
           return (
             <PlanCard
               key={plan.id}

@@ -31,7 +31,6 @@ const STEPS = [
 const hours = BORROW_DURATION_MS / (60 * 60 * 1000);
 const cooldownMin = REBORROW_COOLDOWN_MS / (60 * 1000);
 const graceMin = OVERDUE_SUSPENSION_GRACE_MS / (60 * 1000);
-const suspensionHours = 3;
 
 export default function AnleitungPage() {
   return (
@@ -87,8 +86,8 @@ export default function AnleitungPage() {
           <RuleCard
             icon="🚫"
             tone="danger"
-            title={`Ab ${graceMin} Min. Überziehung: ${suspensionHours}h Sperre`}
-            text={`Überziehst du mehr als ${graceMin} Minuten, wirst du für ${suspensionHours} Stunden für weitere Ausleihen gesperrt.`}
+            title={`Ab ${graceMin} Min. Überziehung: Sperre`}
+            text={`Überziehst du mehr als ${graceMin} Minuten, kannst du eine Weile nichts ausleihen. Wie lange, richtet sich danach, wie lange du überzogen hast: bis 1 Std. sind es 3 Std. Sperre, bis 2 Std. sind es 6 Std., bis 3 Std. sind es 12 Std., darüber 24 Std. Gerechnet wird ab dem Moment der Rückgabe.`}
           />
         </div>
 

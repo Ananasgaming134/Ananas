@@ -9,6 +9,7 @@ import {
 } from "@/lib/discord";
 import {
   MAX_SUBSCRIPTION_AHEAD_MONTHS,
+  addPlanDuration,
   SITE_NAME,
   SUBSCRIPTION_PLANS,
   exceedsMaxSubscription,
@@ -106,8 +107,7 @@ export async function setSubscriptionPlanCore(
 
   const now = new Date();
   const base = target.feePaidUntil && target.feePaidUntil > now ? target.feePaidUntil : now;
-  const newExpiry = new Date(base);
-  newExpiry.setMonth(newExpiry.getMonth() + plan.months);
+  const newExpiry = addPlanDuration(new Date(base), plan);
 
   await prisma.member.update({
     where: { id: memberId },

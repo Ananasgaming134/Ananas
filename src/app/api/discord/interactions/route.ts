@@ -82,6 +82,7 @@ import {
   SITE_NAME,
   MAX_SUBSCRIPTION_AHEAD_MONTHS,
   SUBSCRIPTION_PLANS,
+  addPlanDuration,
   maxSubscriptionEnd,
   formatCoins,
   getSubscriptionPlan,
@@ -1268,8 +1269,7 @@ function respondWithRenewSelect(member: { balance: number; feePaidUntil: Date | 
   const grenze = maxSubscriptionEnd(now);
 
   const options = SUBSCRIPTION_PLANS.map((plan) => {
-    const end = new Date(base);
-    end.setMonth(end.getMonth() + plan.months);
+    const end = addPlanDuration(base, plan);
     const ueberGrenze = end > grenze;
     const affordable = member.balance >= plan.price;
     const geht = affordable && !ueberGrenze;

@@ -34,6 +34,8 @@ import {
   MEMBER_STATUS,
   ROLES,
   SUBSCRIPTION_PLANS,
+  planMonthlyRate,
+  subtractPlanDuration,
 } from "@/lib/constants";
 
 export default async function AktePage({ params }: { params: Promise<{ id: string }> }) {
@@ -128,12 +130,11 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
     : null;
 
   // Fortschritt der aktuellen Laufzeit (fuer die Abo-Fortschrittsanzeige im
-  // Profil) - der Laufzeit-Start wird aus feePaidUntil minus Plan-Monaten
+  // Profil) - der Laufzeit-Start wird aus feePaidUntil minus Paket-Laufzeit
   // hergeleitet, da kein eigenes "Start"-Datum gespeichert wird.
   let periodProgressPct: number | null = null;
   if (currentPlan && target.feePaidUntil) {
-    const periodStart = new Date(target.feePaidUntil);
-    periodStart.setMonth(periodStart.getMonth() - currentPlan.months);
+    const periodStart = subtractPlanDuration(target.feePaidUntil, currentPlan);
     const totalMs = target.feePaidUntil.getTime() - periodStart.getTime();
     const elapsedMs = now.getTime() - periodStart.getTime();
     periodProgressPct = totalMs > 0 ? Math.min(100, Math.max(0, Math.round((elapsedMs / totalMs) * 100))) : 100;
@@ -503,10 +504,10 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
               Konto gutgeschrieben und bleibt dort dauerhaft hinterlegt &ndash; die Aufsicht bucht
               davon dann dein gewünschtes Paket ab. Eine Rücküberweisung ist nicht möglich.
             </p>
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {SUBSCRIPTION_PLANS.map((plan) => {
-                const monthlyRate = plan.price / plan.months;
-                const baseMonthlyRate = SUBSCRIPTION_PLANS[0].price / SUBSCRIPTION_PLANS[0].months;
+                const monthlyRate = planMonthlyRate(plan);
+                const baseMonthlyRate = planMonthlyRate(SUBSCRIPTION_PLANS[0]);
                 const savingsPct = Math.round((1 - monthlyRate / baseMonthlyRate) * 100);
                 const isBestValue = plan.id === SUBSCRIPTION_PLANS[SUBSCRIPTION_PLANS.length - 1].id;
                 return (

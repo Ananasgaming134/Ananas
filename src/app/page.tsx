@@ -20,6 +20,8 @@ import {
   SITE_NAME,
   SUBSCRIPTION_PLANS,
   formatCoins,
+  planMonthlyRate,
+  planRateLabel,
 } from "@/lib/constants";
 
 const SCHRITTE = [
@@ -81,7 +83,7 @@ const FAQ = [
   {
     question: "Wie lange darf ich ein Item behalten?",
     answer:
-      "Zwei Stunden pro Ausleihe. Du bekommst 30 Minuten und 5 Minuten vorher eine Direktnachricht. Wer mehr als 15 Minuten überzieht, wird für zwei Stunden vom Ausleihen gesperrt.",
+      "Zwei Stunden pro Ausleihe. Du bekommst 30 Minuten und 5 Minuten vorher eine Direktnachricht. Wer mehr als 15 Minuten überzieht, kann eine Weile nichts ausleihen — je länger überzogen, desto länger die Sperre.",
   },
   {
     question: "Kann ich das Paket wechseln?",
@@ -245,12 +247,12 @@ export default async function Home() {
         description="Bezahlt wird vom Guthaben auf deinem Konto. Verlängern kannst du jederzeit selbst — auch mit einem anderen Paket."
         eng
       >
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {SUBSCRIPTION_PLANS.map((plan, i) => {
-            const beliebt = i === 1;
-            const proMonat = Math.round(plan.price / plan.months);
+            const beliebt = plan.id === SUBSCRIPTION_PLANS[SUBSCRIPTION_PLANS.length - 1].id;
+            const proMonat = Math.round(planMonthlyRate(plan));
             const ersparnis = Math.round(
-              (1 - proMonat / SUBSCRIPTION_PLANS[0].price) * 100
+              (1 - proMonat / planMonthlyRate(SUBSCRIPTION_PLANS[0])) * 100
             );
             return (
               <Reveal

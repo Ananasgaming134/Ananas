@@ -2,7 +2,13 @@
 
 import { useActionState } from "react";
 import { purchasePlan, type PlanChangeState } from "@/app/actions/planChanges";
-import { MAX_SUBSCRIPTION_AHEAD_MONTHS, formatCoins, type SubscriptionPlan } from "@/lib/constants";
+import {
+  MAX_SUBSCRIPTION_AHEAD_MONTHS,
+  formatCoins,
+  planMonthlyRate,
+  planRateLabel,
+  type SubscriptionPlan,
+} from "@/lib/constants";
 
 const initialState: PlanChangeState = null;
 
@@ -46,7 +52,7 @@ export default function PlanCard({
   const aktuell = currentPlanId === plan.id;
   const reicht = balance >= plan.price;
   const fehlt = plan.price - balance;
-  const proMonat = Math.round(plan.price / plan.months);
+  const proMonat = Math.round(planMonthlyRate(plan));
 
   // Wer schon ein Paket hat, wechselt nichts - die gewaehlte Dauer kommt
   // oben auf die laufende Zeit drauf. Deshalb heisst es hier immer
@@ -93,7 +99,7 @@ export default function PlanCard({
           {formatCoins(plan.price)}
         </p>
         <p className="mt-1 text-xs text-muted">
-          {formatCoins(proMonat)} / Monat
+          {plan.days ? `${formatCoins(plan.price)} ${planRateLabel(plan)}` : `${formatCoins(proMonat)} / Monat`}
           {ersparnis > 0 && (
             <span className="ml-1.5 rounded-full bg-accent-2/15 px-1.5 py-0.5 font-medium text-accent-2">
               -{ersparnis}%
