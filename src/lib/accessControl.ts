@@ -303,6 +303,40 @@ export async function enforceAccessRules(
   return result;
 }
 
+/**
+ * Haelt die gespeicherte Rolle auch bei Mitgliedern richtig, deren Zugang
+ * entzogen wurde. Die laufen sonst nie wieder durch eine Pruefung - sie
+ * melden sich ja nicht mehr an - und behalten ewig die Rolle, die sie beim
+ * Entzug hatten. Im Archiv stand dadurch eine Rolle, die nicht mehr stimmte.
+ *
+ * Wer gar keine Rolle mehr hat, behaelt den letzten bekannten Stand: unser
+ * Rollenfeld kennt kein "keine". Die Oberflaeche weist ihn deshalb als
+ * "zuletzt: ..." aus (siehe RoleBadge).
+ */
+export async function refreshInactiveRoles(): Promise<{ geprueft: number; geaendert: number }> {
+  if (!DISCORD_GUILD_ID || !process.env.DISCORD_BOT_TOKEN) return { geprueft: 0, geaendert: 0 };
+
+  const inaktive = await prisma.member.findMany({
+    where: { status: { not: MEMBER_STATUS.ACTIVE } },
+  });
+
+  let geaendert = 0;
+  for (const member of inaktive) {
+    const result = await checkRoleLive(member.discordId);
+    if (result.status !== "valid" || result.role === member.role) continue;
+
+    await prisma.member.update({ where: { id: member.id }, data: { role: result.role } });
+    await logAction({
+      targetId: member.id,
+      action: "ROLE_AUTO_CHANGED",
+      details: `Rolle im Archiv nachgezogen (${member.role} → ${result.role}).`,
+    });
+    geaendert += 1;
+  }
+
+  return { geprueft: inaktive.length, geaendert };
+}
+
 // Kurzzeit-Cache fuer die serverseitige Rollenpruefung: ohne den wuerde jeder
 // Seitenaufruf eine Discord-API-Abfrage ausloesen. 20s ist kurz genug, dass
 // ein Rollenentzug praktisch sofort greift (der Gateway-Handler reagiert

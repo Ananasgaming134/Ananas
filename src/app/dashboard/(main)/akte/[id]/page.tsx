@@ -179,7 +179,7 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
               <h1 className="text-lg font-semibold">{target.displayName}</h1>
               <p className="text-xs text-muted">@{target.username}</p>
               <div className="mt-1.5 flex gap-2">
-                <RoleBadge role={target.role} />
+                <RoleBadge role={target.role} veraltet={target.status !== MEMBER_STATUS.ACTIVE} />
                 <StatusBadge status={target.status} />
               </div>
             </div>

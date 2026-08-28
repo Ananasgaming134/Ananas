@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { enforceAccessRules } from "@/lib/accessControl";
+import { enforceAccessRules, refreshInactiveRoles } from "@/lib/accessControl";
 import { autoCloseExpiredCloseRequests } from "@/lib/tickets";
 import { sendGraceReminders } from "@/lib/accessControl";
 import { sendExpiryNotices } from "@/lib/subscriptions";
@@ -65,8 +65,10 @@ export async function GET(request: Request) {
   let nameSync: unknown = "übersprungen";
 
   let categoryChannels: unknown = "übersprungen";
+  let archivRollen: unknown = "übersprungen";
 
   if (hourly) {
+    archivRollen = await refreshInactiveRoles().catch((err) => ({ error: String(err) }));
     // Selbstheilung: geloeschte oder veraltete Panel-Nachrichten in den
     // Kategorie-Kanaelen werden hier wieder hergestellt.
     categoryChannels = await syncCategoryChannels().catch((err) => ({ error: String(err) }));
@@ -84,6 +86,7 @@ export async function GET(request: Request) {
     expiryNotices,
     blacklistExpiry,
     categoryChannels,
+    archivRollen,
     subscriptions,
     nameSync,
   });

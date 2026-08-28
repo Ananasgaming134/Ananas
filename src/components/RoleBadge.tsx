@@ -1,8 +1,27 @@
 import clsx from "clsx";
 import { ROLES, ROLE_LABELS, type RoleValue } from "@/lib/constants";
 
-export default function RoleBadge({ role }: { role: string }) {
+/**
+ * Rollen-Kennzeichen. Bei entzogenem Zugang ist die gespeicherte Rolle nur
+ * noch der letzte bekannte Stand - dann wird sie als "zuletzt" ausgewiesen
+ * und blass dargestellt, statt eine Rolle zu behaupten, die es nicht mehr
+ * gibt. Ohne das stand im Archiv z.B. "Aufsichtsperson" bei jemandem, der
+ * auf Discord gar keine Rolle mehr hat.
+ */
+export default function RoleBadge({ role, veraltet }: { role: string; veraltet?: boolean }) {
   const label = ROLE_LABELS[role as RoleValue] ?? role;
+
+  if (veraltet) {
+    return (
+      <span
+        title="Zugang entzogen - das ist die zuletzt bekannte Rolle, keine aktuelle."
+        className="inline-flex items-center rounded-full border border-border bg-surface-2 px-2.5 py-0.5 text-xs font-medium text-muted/70"
+      >
+        zuletzt: {label}
+      </span>
+    );
+  }
+
   return (
     <span
       className={clsx(

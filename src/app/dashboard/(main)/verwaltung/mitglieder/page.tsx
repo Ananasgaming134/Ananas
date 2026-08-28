@@ -3,6 +3,7 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import RoleBadge from "@/components/RoleBadge";
 import StatusBadge from "@/components/StatusBadge";
+import { MEMBER_STATUS } from "@/lib/constants";
 import PageHeader from "@/components/PageHeader";
 import { ROLES } from "@/lib/constants";
 
@@ -82,7 +83,7 @@ export default async function MitgliederPage({
                 <td className="px-4 py-3 font-mono text-xs text-muted">{m.discordId}</td>
                 <td className="px-4 py-3 text-muted">{m.minecraftName || "-"}</td>
                 <td className="px-4 py-3">
-                  <RoleBadge role={m.role} />
+                  <RoleBadge role={m.role} veraltet={m.status !== MEMBER_STATUS.ACTIVE} />
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge status={m.status} />
