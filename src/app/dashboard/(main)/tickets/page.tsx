@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import SupportTicketForm from "@/components/SupportTicketForm";
@@ -61,6 +62,12 @@ export default async function TicketsPage() {
                   >
                     {STATUS_LABELS[ticket.status] ?? ticket.status}
                   </span>
+                  <Link
+                    href={`/dashboard/tickets/${ticket.id}`}
+                    className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition hover:border-accent/40 hover:bg-surface-2"
+                  >
+                    {ticket.status === "CLOSED" ? "Verlauf ansehen" : "Öffnen & antworten"}
+                  </Link>
                   {ticket.discordChannelId && (
                     <a
                       href={`https://discord.com/channels/${ticket.discordGuildId}/${ticket.discordChannelId}`}

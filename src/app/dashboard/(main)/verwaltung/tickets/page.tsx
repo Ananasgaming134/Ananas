@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { claimTicket, closeTicket } from "@/app/actions/tickets";
@@ -92,6 +93,12 @@ export default async function VerwaltungTicketsPage() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/dashboard/tickets/${ticket.id}`}
+                        className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition hover:border-accent/40 hover:bg-surface-2"
+                      >
+                        Verlauf & antworten
+                      </Link>
                       {ticket.discordChannelId && (
                         <a
                           href={`https://discord.com/channels/${ticket.discordGuildId}/${ticket.discordChannelId}`}
