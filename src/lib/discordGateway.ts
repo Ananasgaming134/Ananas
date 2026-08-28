@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { processWordChainAttempt } from "@/lib/wordChain";
 import { roleIdsFromEnv, DISCORD_PAYMENTS_CHANNEL_ID } from "@/lib/discord";
 import { checkForNewPayments } from "@/lib/payments";
+import { invalidateTeamCache } from "@/lib/team";
 import {
   revokeAccessAndRole,
   startGracePeriodIfNeeded,
@@ -120,6 +121,14 @@ async function handleMemberRoleUpdate(oldMember: GuildMember | PartialGuildMembe
 
   const before = oldMember.roles?.cache.map((r) => r.id) ?? [];
   const after = newMember.roles.cache.map((r) => r.id);
+
+  // Die Team-Anzeige auf der Startseite haengt an mehr Rollen als nur unseren
+  // drei (Admin, Teamleitung, Developer...). Deshalb wird ihr Zwischenspeicher
+  // bei JEDER Rollenaenderung verworfen - dann steht dort sofort der neue
+  // Stand, statt bis zu einer Minute der alte.
+  if (before.length !== after.length || before.some((r) => !after.includes(r))) {
+    invalidateTeamCache();
+  }
 
   // Nur reagieren, wenn sich an den LeihCenter-Rollen wirklich etwas geaendert
   // hat - andere Rollen (VIP, Farben, ...) sind fuer uns belanglos.

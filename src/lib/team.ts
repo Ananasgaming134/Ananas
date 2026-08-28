@@ -1,12 +1,9 @@
-import { prisma } from "@/lib/prisma";
 import {
   ADMIN_ROLE_ID,
   TEAMLEITUNG_ROLE_ID,
   fetchGuildMembersWithRole,
   roleIdsFromEnv,
-  type DiscordGuildMember,
 } from "@/lib/discord";
-import { MEMBER_STATUS, ROLES } from "@/lib/constants";
 
 export type TeamMember = {
   discordId: string;
@@ -21,32 +18,38 @@ export type TeamGroup = {
   members: TeamMember[];
 };
 
-async function membersFromDb(role: string): Promise<TeamMember[]> {
-  const rows = await prisma.member.findMany({
-    where: { role, status: MEMBER_STATUS.ACTIVE },
-    orderBy: { joinedAt: "asc" },
-  });
-  return rows.map((m) => ({
-    discordId: m.discordId,
-    displayName: m.displayName,
-    username: m.username,
-    avatarUrl: m.avatarUrl,
-  }));
-}
+/**
+ * Zuletzt erfolgreich von Discord geholte Team-Liste.
+ *
+ * Zwei Gruende dafuer: die Startseite fragt sonst bei jedem Aufruf alle
+ * Server-Mitglieder ab (mehrere hundert), und wenn dieser Aufruf mal
+ * fehlschlaegt, soll die Seite den letzten bekannten Stand zeigen statt
+ * einen falschen. Frueher fiel sie in dem Fall auf die Rollen aus unserer
+ * eigenen Datenbank zurueck - die koennen veraltet sein, dadurch standen
+ * Leute im Team, die die Rolle laengst nicht mehr hatten.
+ */
+let zwischenspeicher: { gruppen: TeamGroup[]; bis: number } | null = null;
+const CACHE_MS = 60_000;
 
-async function membersFromDiscordRole(envVarName: string): Promise<TeamMember[] | null> {
-  return membersFromRoleIds(roleIdsFromEnv(envVarName));
+/**
+ * Verwirft den Zwischenspeicher. Wird von der Gateway-Verbindung aufgerufen,
+ * sobald sich auf Discord an irgendeiner Rolle etwas aendert - dadurch steht
+ * die Team-Anzeige sofort richtig, statt bis zu einer Minute alt zu sein.
+ */
+export function invalidateTeamCache(): void {
+  zwischenspeicher = null;
 }
 
 async function membersFromRoleIds(roleIds: string[]): Promise<TeamMember[] | null> {
-  if (roleIds.length === 0) return null;
+  const ids = roleIds.filter(Boolean);
+  if (ids.length === 0) return null;
 
   const seen = new Set<string>();
   const result: TeamMember[] = [];
-  for (const roleId of roleIds) {
+  for (const roleId of ids) {
     const members = await fetchGuildMembersWithRole(roleId);
     if (members === null) return null;
-    for (const m of members as DiscordGuildMember[]) {
+    for (const m of members) {
       if (seen.has(m.discordId)) continue;
       seen.add(m.discordId);
       result.push(m);
@@ -56,22 +59,26 @@ async function membersFromRoleIds(roleIds: string[]): Promise<TeamMember[] | nul
 }
 
 /**
- * Baut die Team-Anzeige fuer die Startseite. Owner/Aufsicht koennen immer
- * aus unserer eigenen Mitglieder-Akte kommen (die loggen sich ja hier ein).
- * Developer/Developer-Leitung haben keinen App-Login-Zweck und muessen
- * daher live von Discord kommen - das braucht das privilegierte "Server
- * Members Intent" *und* die jeweiligen Rollen-IDs in .env. Fehlt eines von
- * beidem, wird die Gruppe einfach weggelassen statt einen Fehler zu zeigen.
+ * Baut die Team-Anzeige fuer die Startseite - ausschliesslich aus dem, was
+ * gerade wirklich auf Discord steht. Wer die Rolle dort nicht hat, taucht
+ * hier nicht auf, egal was in unserer Datenbank steht.
  */
 export async function getTeamGroups(): Promise<TeamGroup[]> {
+  if (zwischenspeicher && zwischenspeicher.bis > Date.now()) return zwischenspeicher.gruppen;
+
   const [owner, teamleitung, admin, developerLeitung, developer, aufsicht] = await Promise.all([
-    membersFromDiscordRole("DISCORD_ROLE_OWNER").then((v) => v ?? membersFromDb(ROLES.OWNER)),
+    membersFromRoleIds(roleIdsFromEnv("DISCORD_ROLE_OWNER")),
     membersFromRoleIds([TEAMLEITUNG_ROLE_ID]),
     membersFromRoleIds([ADMIN_ROLE_ID]),
-    membersFromDiscordRole("DISCORD_ROLE_DEVELOPER_LEITUNG"),
-    membersFromDiscordRole("DISCORD_ROLE_DEVELOPER"),
-    membersFromDiscordRole("DISCORD_ROLE_AUFSICHT").then((v) => v ?? membersFromDb(ROLES.AUFSICHT)),
+    membersFromRoleIds(roleIdsFromEnv("DISCORD_ROLE_DEVELOPER_LEITUNG")),
+    membersFromRoleIds(roleIdsFromEnv("DISCORD_ROLE_DEVELOPER")),
+    membersFromRoleIds(roleIdsFromEnv("DISCORD_ROLE_AUFSICHT")),
   ]);
+
+  // Discord war nicht erreichbar: lieber den letzten bekannten Stand zeigen
+  // (oder gar nichts) als eine Liste, die nicht stimmt.
+  const discordErreichbar = [owner, teamleitung, admin, developer, aufsicht].some((x) => x !== null);
+  if (!discordErreichbar) return zwischenspeicher?.gruppen ?? [];
 
   // Reihenfolge von oben nach unten. Wer mehrere Rollen traegt, erscheint nur
   // einmal - bei der hoechsten, die zuerst kommt.
@@ -85,7 +92,7 @@ export async function getTeamGroups(): Promise<TeamGroup[]> {
   ];
 
   const bereitsGezeigt = new Set<string>();
-  return rangfolge
+  const gruppen = rangfolge
     .map((group) => ({
       ...group,
       members: group.members.filter((m) => {
@@ -95,4 +102,7 @@ export async function getTeamGroups(): Promise<TeamGroup[]> {
       }),
     }))
     .filter((g) => g.members.length > 0);
+
+  zwischenspeicher = { gruppen, bis: Date.now() + CACHE_MS };
+  return gruppen;
 }
