@@ -1,13 +1,6 @@
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import {
-  DISCORD_BOT_TOKEN,
-  ITEM_CATEGORY_PARENT_ID,
-  createCategoryChannel,
-  deleteChannel,
-  renameChannel,
-  roleIdsFromEnv,
-} from "@/lib/discord";
+import { DISCORD_BOT_TOKEN } from "@/lib/discord";
 import { LOAN_STATUS, SITE_NAME } from "@/lib/constants";
 import {
   CATEGORY_ITEM_SELECT_ID,
@@ -932,12 +925,8 @@ export type CategorySyncResult = {
  */
 export async function syncCategoryChannels(): Promise<CategorySyncResult> {
   const result: CategorySyncResult = { created: 0, updated: 0, deleted: 0, errors: [] };
-  if (!DISCORD_BOT_TOKEN || !ITEM_CATEGORY_PARENT_ID) return result;
+  if (!DISCORD_BOT_TOKEN) return result;
 
-  const deployment = await prisma.botDeployment.findFirst({ where: { active: true } });
-  if (!deployment) return result;
-
-  const kundeRoleIds = roleIdsFromEnv("DISCORD_ROLE_KUNDE");
   const { categories } = await loadPanelCategories();
   const dbCategories = await prisma.category.findMany({ orderBy: { name: "asc" } });
 
@@ -952,27 +941,11 @@ export async function syncCategoryChannels(): Promise<CategorySyncResult> {
       items: [],
     };
 
-    let channelId = dbCategory.discordChannelId;
-
-    if (!channelId) {
-      const created = await createCategoryChannel(
-        deployment.guildId,
-        ITEM_CATEGORY_PARENT_ID,
-        dbCategory.name,
-        kundeRoleIds
-      );
-      if (!created.ok) {
-        result.errors.push(`${dbCategory.name}: ${created.error}`);
-        continue;
-      }
-      channelId = created.channelId;
-      await prisma.category.update({
-        where: { id: dbCategory.id },
-        data: { discordChannelId: channelId, panelMessageIds: null },
-      });
-      result.created += 1;
-      await sleep(500);
-    }
+    // Kanaele legt niemand mehr automatisch an - welcher Kanal zu welcher
+    // Kategorie gehoert, tragen die Owner selbst ein. Ohne Eintrag gibt es
+    // fuer diese Kategorie schlicht kein Panel.
+    const channelId = dbCategory.discordChannelId;
+    if (!channelId) continue;
 
     const payloads = await buildCategoryChannelMessages(live);
     const hash = hashPayload(payloads);
@@ -1009,18 +982,45 @@ export async function syncCategoryChannels(): Promise<CategorySyncResult> {
   return result;
 }
 
-/** Benennt den Kanal einer Kategorie um - beim Umbenennen der Kategorie. */
-export async function renameCategoryChannel(categoryId: string, newName: string): Promise<void> {
-  const category = await prisma.category.findUnique({ where: { id: categoryId } });
-  if (!category?.discordChannelId) return;
-  await renameChannel(category.discordChannelId, newName).catch(() => {});
-}
-
-/** Loescht den Kanal einer Kategorie - beim Entfernen der Kategorie. */
+/**
+ * Loest die Verbindung einer Kategorie zu ihrem Kanal - beim Entfernen der
+ * Kategorie. Der Discord-Kanal selbst bleibt unangetastet: er gehoert den
+ * Ownern, nicht uns. Nur unsere Panel-Nachrichten darin werden aufgeraeumt.
+ */
 export async function deleteCategoryChannel(categoryId: string): Promise<void> {
   const category = await prisma.category.findUnique({ where: { id: categoryId } });
   if (!category?.discordChannelId) return;
-  await deleteChannel(category.discordChannelId).catch(() => {});
+
+  const ids = (category.panelMessageIds ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  for (const id of ids) {
+    await deleteMessage(category.discordChannelId, id).catch(() => {});
+  }
+}
+
+/**
+ * Schickt das Panel einer Kategorie neu in ihren Kanal - alte Nachrichten
+ * werden vorher entfernt. Fuer den Fall, dass jemand sie in Discord geloescht
+ * hat oder sie an der falschen Stelle stehen.
+ */
+export async function repostCategoryPanel(categoryId: string): Promise<{ ok: boolean; error?: string }> {
+  const category = await prisma.category.findUnique({ where: { id: categoryId } });
+  if (!category) return { ok: false, error: "Kategorie nicht gefunden." };
+  if (!category.discordChannelId) return { ok: false, error: "Für diese Kategorie ist kein Kanal hinterlegt." };
+
+  const alteIds = (category.panelMessageIds ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  for (const id of alteIds) {
+    await deleteMessage(category.discordChannelId, id).catch(() => {});
+  }
+
+  // Ohne gemerkte Nachrichten und ohne Pruefsumme legt der Abgleich neu an.
+  await prisma.category.update({
+    where: { id: categoryId },
+    data: { panelMessageIds: null, panelHash: null },
+  });
+
+  const result = await syncCategoryChannels();
+  const fehler = result.errors.find((e) => e.startsWith(category.name));
+  return fehler ? { ok: false, error: fehler } : { ok: true };
 }
 
 /** Wie syncCategoryChannels(), schluckt aber Fehler - fuer Web-Aktionen. */
