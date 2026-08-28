@@ -19,6 +19,37 @@ export type ChatNachricht = {
 };
 
 /**
+ * Discord-Formatierung im Verlauf lesbar machen. Ohne das stuenden **Sterne**
+ * und `Backticks` roh im Text - gerade Systemmeldungen nutzen die staendig.
+ */
+function formatiert(text: string) {
+  return text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g).map((teil, i) => {
+    if (teil.startsWith("**") && teil.endsWith("**")) {
+      return (
+        <strong key={i} className="font-semibold text-foreground">
+          {teil.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (teil.startsWith("*") && teil.endsWith("*") && teil.length > 2) {
+      return (
+        <em key={i} className="italic">
+          {teil.slice(1, -1)}
+        </em>
+      );
+    }
+    if (teil.startsWith("`") && teil.endsWith("`") && teil.length > 2) {
+      return (
+        <code key={i} className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[0.9em]">
+          {teil.slice(1, -1)}
+        </code>
+      );
+    }
+    return <span key={i}>{teil}</span>;
+  });
+}
+
+/**
  * Gespraechsverlauf eines Tickets mit Antwortfeld. Der Verlauf kommt live aus
  * dem Discord-Thread; solange das Ticket offen ist, wird er im Hintergrund
  * nachgeladen, damit man mitliest, was drueben geschrieben wird.
@@ -104,7 +135,7 @@ export default function TicketChat({
 
                 {n.text && (
                   <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-muted">
-                    {n.text}
+                    {formatiert(n.text)}
                   </p>
                 )}
 

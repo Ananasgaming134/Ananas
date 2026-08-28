@@ -20,9 +20,16 @@ type RohNachricht = {
   id: string;
   content: string;
   timestamp: string;
-  author: { id: string; username: string; global_name?: string | null; avatar: string | null; bot?: boolean };
+  author: {
+    id: string;
+    username: string;
+    global_name?: string | null;
+    avatar: string | null;
+    bot?: boolean;
+  };
   attachments?: { url: string; filename: string }[];
-  embeds?: { author?: { name?: string; icon_url?: string }; description?: string }[];
+  embeds?: { author?: { name?: string; icon_url?: string }; description?: string; title?: string }[];
+  mentions?: { id: string; username: string; global_name?: string | null }[];
 };
 
 function avatarUrl(userId: string, hash: string | null): string | null {
@@ -30,9 +37,24 @@ function avatarUrl(userId: string, hash: string | null): string | null {
 }
 
 /**
+ * Erwaehnungen kommen als <@123456> an. Auf der Website liest sich das wie ein
+ * Fehler, deshalb werden sie durch die Namen ersetzt, die Discord gleich
+ * mitliefert. Rollen-Pings haben keinen Namen dabei - die werden zu einem
+ * neutralen Platzhalter, sie sind ohnehin nur Signal ans Team.
+ */
+function erwaehnungenAufloesen(text: string, mentions: RohNachricht["mentions"]): string {
+  let ergebnis = text.replace(/<@&\d+>/g, "@Team");
+  for (const m of mentions ?? []) {
+    ergebnis = ergebnis.replaceAll(`<@${m.id}>`, `@${m.global_name || m.username}`);
+  }
+  // Wen Discord nicht mitgeliefert hat (z.B. jemand, der den Server verlassen hat).
+  return ergebnis.replace(/<@!?\d+>/g, "@jemand");
+}
+
+/**
  * Holt den Gespraechsverlauf eines Tickets direkt aus dem Discord-Thread.
- * Bewusst live statt gespiegelt: so kann die Website gar nicht auseinander-
- * laufen, egal ob jemand in Discord oder hier schreibt.
+ * Bewusst live statt gespiegelt: so koennen Website und Discord gar nicht
+ * auseinanderlaufen, egal wo geschrieben wird.
  *
  * Nachrichten, die ueber die Website geschrieben wurden, kommen als Embed mit
  * Autorzeile an - die wird hier wieder in Name und Text zerlegt, damit sie
@@ -53,13 +75,22 @@ export async function getTicketMessages(channelId: string | null): Promise<Ticke
     .map((m): TicketMessage => {
       const websiteEmbed = m.embeds?.find((e) => e.author?.name && e.description);
 
+      // Ohne das ginge der Text von Embeds ohne Autorzeile verloren - genau
+      // diese Form hat die Eroeffnungsnachricht eines Tickets.
+      const embedTexte = websiteEmbed
+        ? [websiteEmbed.description ?? ""]
+        : (m.embeds ?? []).map((e) => [e.title, e.description].filter(Boolean).join("\n"));
+      const roherText = [websiteEmbed ? "" : m.content, ...embedTexte]
+        .filter((t) => t && t.trim())
+        .join("\n\n");
+
       return {
         id: m.id,
         autor: websiteEmbed?.author?.name ?? (m.author.global_name || m.author.username),
         avatarUrl: websiteEmbed?.author?.icon_url ?? avatarUrl(m.author.id, m.author.avatar),
         istBot: Boolean(m.author.bot) && !websiteEmbed,
         vonWebsite: Boolean(websiteEmbed),
-        text: websiteEmbed?.description ?? m.content,
+        text: erwaehnungenAufloesen(roherText, m.mentions),
         anhaenge: (m.attachments ?? []).map((a) => ({ url: a.url, name: a.filename })),
         zeit: new Date(m.timestamp),
       };
@@ -87,7 +118,10 @@ export async function postTicketMessage(
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) return { ok: false, error: "Ticket nicht gefunden." };
   if (ticket.status === TICKET_STATUS.CLOSED) {
-    return { ok: false, error: "Das Ticket ist geschlossen - hier kann nicht mehr geschrieben werden." };
+    return {
+      ok: false,
+      error: "Das Ticket ist geschlossen - hier kann nicht mehr geschrieben werden.",
+    };
   }
   if (!ticket.discordChannelId) {
     return { ok: false, error: "Zu diesem Ticket gibt es keinen Discord-Kanal." };
