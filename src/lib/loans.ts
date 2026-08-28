@@ -1,3 +1,4 @@
+import type { Item, Member } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { resolveOverdueNotice } from "@/lib/overdueChannel";
@@ -33,31 +34,49 @@ function formatMinutes(ms: number): string {
  * - eine 30-Minuten-Abklingzeit auf DASSELBE Item nach dessen letzter
  *   Rueckgabe durch dieselbe Person (verhindert sofortiges Neu-Ausleihen)
  */
-export async function borrowItemCore(
-  itemId: string,
-  memberId: string,
-  channel: LoanChannelValue
-): Promise<LoanActionResult> {
-  const [item, member] = await Promise.all([
-    prisma.item.findUnique({ where: { id: itemId } }),
-    prisma.member.findUnique({ where: { id: memberId } }),
-  ]);
-  if (!item) return { ok: false, error: "Item nicht gefunden." };
+export type AusleihPruefung = { ok: true } | { ok: false; error: string };
+
+/** Was fuer die Pruefung eines einzelnen Items gebraucht wird. */
+export type ItemLage = {
+  /** Wie viele Stueck dieses Items gerade draussen sind. */
+  aktiveAusleihen: number;
+  /** Hat die Person dieses Item selbst schon draussen? */
+  schonAusgeliehen: boolean;
+  /** Wann die Person es zuletzt zurueckgegeben hat (fuer die 30-Min.-Pause). */
+  letzteRueckgabe: Date | null;
+};
+
+/**
+ * Alle Regeln, die ueber eine Ausleihe entscheiden - an EINER Stelle.
+ *
+ * Wird sowohl beim echten Ausleihen benutzt als auch fuer die Vorschau eines
+ * Sets. Beides muss zwingend zum selben Ergebnis kommen, sonst verspricht die
+ * Vorschau etwas, das die Ausleihe dann doch ablehnt.
+ */
+export function pruefeAusleihe(
+  item: Pick<Item, "name" | "quantityTotal" | "unavailable" | "unavailableReason">,
+  member: Pick<
+    Member,
+    | "rightsBlockedAt"
+    | "rightsBlockReason"
+    | "borrowSuspendedUntil"
+    | "borrowSuspendedReason"
+    | "pausedAt"
+    | "feePaidUntil"
+    | "verifiedAt"
+  >,
+  lage: ItemLage,
+  now: Date = new Date()
+): AusleihPruefung {
   if (item.unavailable) {
     return {
       ok: false,
       error: item.unavailableReason
-        ? `Dieses Item ist derzeit nicht ausleihbar: ${item.unavailableReason}`
-        : "Dieses Item ist derzeit nicht ausleihbar.",
+        ? `Derzeit nicht ausleihbar: ${item.unavailableReason}`
+        : "Derzeit nicht ausleihbar.",
     };
   }
-  if (!member) return { ok: false, error: "Mitglied nicht gefunden." };
 
-  const now = new Date();
-
-  // Sperre durch das Team wegen eines Verstosses - laeuft nicht von selbst
-  // ab, sondern muss aufgehoben werden. Steht vor der automatischen Sperre,
-  // weil sie schwerer wiegt und ihr Grund konkreter ist.
   if (member.rightsBlockedAt) {
     return {
       ok: false,
@@ -94,6 +113,42 @@ export async function borrowItemCore(
     };
   }
 
+  if (lage.schonAusgeliehen) {
+    return { ok: false, error: "Du hast dieses Item bereits ausgeliehen." };
+  }
+
+  if (lage.letzteRueckgabe) {
+    const cooldownEnd = lage.letzteRueckgabe.getTime() + REBORROW_COOLDOWN_MS;
+    if (cooldownEnd > now.getTime()) {
+      const remaining = formatMinutes(cooldownEnd - now.getTime());
+      return {
+        ok: false,
+        error: `Erst in ${remaining} Min. wieder ausleihbar (30 Min. Pause nach deiner Rückgabe).`,
+      };
+    }
+  }
+
+  if (lage.aktiveAusleihen >= item.quantityTotal) {
+    return { ok: false, error: "Gerade nicht verfügbar - alle Stücke sind ausgeliehen." };
+  }
+
+  return { ok: true };
+}
+
+export async function borrowItemCore(
+  itemId: string,
+  memberId: string,
+  channel: LoanChannelValue
+): Promise<LoanActionResult> {
+  const [item, member] = await Promise.all([
+    prisma.item.findUnique({ where: { id: itemId } }),
+    prisma.member.findUnique({ where: { id: memberId } }),
+  ]);
+  if (!item) return { ok: false, error: "Item nicht gefunden." };
+  if (!member) return { ok: false, error: "Mitglied nicht gefunden." };
+
+  const now = new Date();
+
   const [activeLoansForItem, alreadyBorrowed, lastReturnOfItem] = await Promise.all([
     prisma.loan.count({ where: { itemId, status: LOAN_STATUS.ACTIVE } }),
     prisma.loan.findFirst({ where: { itemId, memberId, status: LOAN_STATUS.ACTIVE } }),
@@ -103,22 +158,17 @@ export async function borrowItemCore(
     }),
   ]);
 
-  if (alreadyBorrowed) return { ok: false, error: "Du hast dieses Item bereits ausgeliehen." };
-
-  if (lastReturnOfItem?.returnedAt) {
-    const cooldownEnd = lastReturnOfItem.returnedAt.getTime() + REBORROW_COOLDOWN_MS;
-    if (cooldownEnd > now.getTime()) {
-      const remaining = formatMinutes(cooldownEnd - now.getTime());
-      return {
-        ok: false,
-        error: `Dieses Item kannst du erst in ${remaining} Min. wieder ausleihen (30 Min. Pause nach Rückgabe). In dieser Zeit darfst du es auch nicht im Inventar haben.`,
-      };
-    }
-  }
-
-  if (activeLoansForItem >= item.quantityTotal) {
-    return { ok: false, error: "Item ist aktuell nicht verfügbar." };
-  }
+  const pruefung = pruefeAusleihe(
+    item,
+    member,
+    {
+      aktiveAusleihen: activeLoansForItem,
+      schonAusgeliehen: Boolean(alreadyBorrowed),
+      letzteRueckgabe: lastReturnOfItem?.returnedAt ?? null,
+    },
+    now
+  );
+  if (!pruefung.ok) return { ok: false, error: pruefung.error };
 
   const loan = await prisma.loan.create({
     data: { itemId, memberId, channel, dueAt: new Date(now.getTime() + BORROW_DURATION_MS) },

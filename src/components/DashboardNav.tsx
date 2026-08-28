@@ -19,6 +19,7 @@ const KUNDENBEREICH_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard", label: "Übersicht", icon: "🏠" },
       { href: "/dashboard/items", label: "Items", icon: "📦" },
+      { href: "/dashboard/sets", label: "Meine Sets", icon: "🎒" },
       { href: "/dashboard/statistik", label: "Statistik", icon: "📊" },
     ],
   },

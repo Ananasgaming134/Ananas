@@ -116,6 +116,7 @@ model Member {
 
   loans          Loan[]
   favorites      Favorite[]
+  itemSets       ItemSet[]
   fines          Fine[]
   planChangeRequests PlanChangeRequest[]
   notesAbout     MemberNote[] @relation("NotesAboutMember")
@@ -208,6 +209,7 @@ model Item {
 
   loans          Loan[]
   favorites      Favorite[]
+  setEntries     ItemSetEntry[]
 
   @@index([categoryId])
   @@index([sourceKey])
@@ -613,4 +615,29 @@ model Fine {
 
   @@index([memberId])
   @@index([paidAt])
+}
+
+/// Zusammenstellung aus bis zu sechs Items, die man mit einem Klick am Stueck
+/// ausleiht. Rein persoenlich - jeder sieht nur seine eigenen Sets.
+model ItemSet {
+  id        String         @id @default(cuid())
+  memberId  String
+  member    Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  entries   ItemSetEntry[]
+
+  @@index([memberId])
+}
+
+model ItemSetEntry {
+  id     String  @id @default(cuid())
+  setId  String
+  set    ItemSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+  itemId String
+  item   Item    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([setId, itemId])
+  @@index([setId])
 }

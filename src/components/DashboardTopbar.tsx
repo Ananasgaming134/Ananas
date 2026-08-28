@@ -11,6 +11,7 @@ type RouteTitle = { path: string; title: string; exact?: boolean };
 const ROUTE_TITLES: RouteTitle[] = [
   { path: "/dashboard", title: "Übersicht", exact: true },
   { path: "/dashboard/items", title: "Items" },
+  { path: "/dashboard/sets", title: "Meine Sets" },
   { path: "/dashboard/statistik", title: "Statistik" },
   { path: "/dashboard/abo", title: "Abo" },
   { path: "/dashboard/tickets", title: "Tickets" },
