@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import ItemCard from "@/components/ItemCard";
+import ReturnAllButton from "@/components/ReturnAllButton";
 import { hasAtLeastRole, LOAN_STATUS, REBORROW_COOLDOWN_MS, ROLES } from "@/lib/constants";
 
 /**
@@ -178,6 +179,16 @@ export default async function ItemsPage({
           </Link>
         )}
       </div>
+
+      {myActiveLoans.length > 1 && (
+        <div className="card flex flex-wrap items-center justify-between gap-3 p-4">
+          <p className="text-sm">
+            Du hast gerade{" "}
+            <span className="font-medium">{myActiveLoans.length} Items</span> ausgeliehen.
+          </p>
+          <ReturnAllButton anzahl={myActiveLoans.length} />
+        </div>
+      )}
 
       {isSuspended && (
         <div className="card border-danger/40 bg-danger/10 p-4">

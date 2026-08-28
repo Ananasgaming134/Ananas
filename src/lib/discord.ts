@@ -68,13 +68,16 @@ export const TEAMLEITUNG_ROLE_ID =
   process.env.DISCORD_ROLE_TEAMLEITUNG ?? "1514905388284379217";
 
 /**
- * Rollen mit voller Berechtigung: Owner, Dev und Admin. Enthaelt neben den
- * fest vorgegebenen Rollen auch die Owner-Rolle aus DISCORD_ROLE_OWNER, damit
- * beide Konfigurationswege greifen.
+ * Rollen mit voller Berechtigung: Owner und Admin.
+ *
+ * Die Dev-Rolle stand hier frueher mit drin und hatte dadurch dieselben
+ * Rechte wie ein Owner. Das war nicht gewollt - sie ist eine reine
+ * Kennzeichnung ohne Sonderrechte. Wer als Dev auch verwalten soll, bekommt
+ * dafuer die Owner- oder Admin-Rolle.
  */
 export function ticketOwnerRoleIds(): string[] {
   const fromEnv = roleIdsFromEnv("DISCORD_TICKET_OWNER_ROLE_IDS");
-  const base = fromEnv.length > 0 ? fromEnv : ["1469712028049346743", "1477054018097385514"];
+  const base = fromEnv.length > 0 ? fromEnv : ["1469712028049346743"];
   return [...new Set([...base, ADMIN_ROLE_ID, ...roleIdsFromEnv("DISCORD_ROLE_OWNER")].filter(Boolean))];
 }
 

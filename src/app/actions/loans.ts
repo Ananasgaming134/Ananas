@@ -3,9 +3,10 @@
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireMember } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
 import { borrowItemCore, returnLoanCore } from "@/lib/loans";
 import { refreshPanelsQuietly, syncCategoryChannelsQuietly } from "@/lib/discordPanel";
-import { LOAN_CHANNEL, ROLES } from "@/lib/constants";
+import { LOAN_CHANNEL, LOAN_STATUS, ROLES } from "@/lib/constants";
 
 export type LoanActionState = { ok: boolean; error?: string } | null;
 
@@ -62,6 +63,50 @@ export async function returnLoan(
   refreshItemPages();
   if (result.ok) discordNachziehen();
   return result.ok ? { ok: true } : { ok: false, error: result.error };
+}
+
+/**
+ * Gibt alle eigenen laufenden Ausleihen auf einmal zurueck. Wer fuenf Items
+ * draussen hat, soll nicht fuenfmal klicken muessen - gerade kurz vor Ablauf
+ * der Frist zaehlt jede Sekunde.
+ *
+ * Fehlschlaege einzelner Rueckgaben brechen den Rest nicht ab; am Ende steht
+ * in der Meldung, was durchging und was nicht.
+ */
+export async function returnAllLoans(
+  _prev?: LoanActionState,
+  _formData?: FormData
+): Promise<LoanActionState> {
+  const member = await requireMember();
+
+  const offene = await prisma.loan.findMany({
+    where: { memberId: member.id, status: LOAN_STATUS.ACTIVE },
+    select: { id: true },
+  });
+  if (offene.length === 0) return { ok: false, error: "Du hast gerade nichts ausgeliehen." };
+
+  let erfolgreich = 0;
+  const fehler: string[] = [];
+
+  for (const loan of offene) {
+    const result = await returnLoanCore(loan.id, member.id);
+    if (result.ok) erfolgreich += 1;
+    else fehler.push(result.error);
+  }
+
+  refreshItemPages();
+  if (erfolgreich > 0) discordNachziehen();
+
+  if (erfolgreich === 0) {
+    return { ok: false, error: fehler[0] ?? "Die Rückgabe hat nicht geklappt." };
+  }
+  if (fehler.length > 0) {
+    return {
+      ok: false,
+      error: `${erfolgreich} von ${offene.length} zurückgegeben. Bei den übrigen: ${fehler[0]}`,
+    };
+  }
+  return { ok: true };
 }
 
 /**
