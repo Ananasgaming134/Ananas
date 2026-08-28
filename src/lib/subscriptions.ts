@@ -74,7 +74,12 @@ type SetSubscriptionResult =
 export async function setSubscriptionPlanCore(
   memberId: string,
   planId: string,
-  actorId: string | null
+  actorId: string | null,
+  /**
+   * Vom Team gewaehrt, ohne Guthaben abzubuchen - z.B. als Ausgleich, als
+   * Sonderdeal oder fuer Teamler. Selbstbedienung setzt das nie.
+   */
+  optionen: { ohneAbbuchung?: boolean } = {}
 ): Promise<SetSubscriptionResult> {
   const target = await prisma.member.findUnique({ where: { id: memberId } });
   if (!target) return { ok: false, error: "Mitglied nicht gefunden." };
@@ -98,7 +103,7 @@ export async function setSubscriptionPlanCore(
     };
   }
 
-  if (target.balance < plan.price) {
+  if (!optionen.ohneAbbuchung && target.balance < plan.price) {
     return {
       ok: false,
       error: `Nicht genug Guthaben (aktuell ${formatCoins(target.balance)}, benötigt ${formatCoins(plan.price)}).`,
@@ -116,7 +121,7 @@ export async function setSubscriptionPlanCore(
       monthlyFee: plan.price,
       feePaidUntil: newExpiry,
       subscriptionReminderSentAt: null,
-      balance: { decrement: plan.price },
+      ...(optionen.ohneAbbuchung ? {} : { balance: { decrement: plan.price } }),
       // Abo steht - die Zahlungsfrist nach der Rollenvergabe ist damit
       // erfuellt und darf nicht mehr zum Rollenentzug fuehren.
       graceUntil: null,
@@ -133,8 +138,86 @@ export async function setSubscriptionPlanCore(
   await logAction({
     actorId,
     targetId: memberId,
-    action: "SUBSCRIPTION_CHARGED",
-    details: `Abo "${plan.label}" (${formatCoins(plan.price)}) vom Guthaben abgebucht, gültig bis ${newExpiry.toLocaleDateString("de-DE")}.`,
+    action: optionen.ohneAbbuchung ? "SUBSCRIPTION_GRANTED" : "SUBSCRIPTION_CHARGED",
+    details: optionen.ohneAbbuchung
+      ? `Abo "${plan.label}" ohne Abbuchung gewährt, gültig bis ${newExpiry.toLocaleDateString("de-DE")}.`
+      : `Abo "${plan.label}" (${formatCoins(plan.price)}) vom Guthaben abgebucht, gültig bis ${newExpiry.toLocaleDateString("de-DE")}.`,
+  });
+
+  return { ok: true, plan, newExpiry };
+}
+
+/**
+ * Freies Abo nach Mass: Betrag und Laufzeit gibt das Team selbst vor, statt
+ * eines der festen Pakete zu nehmen. Fuer Sonderabsprachen, Ausgleiche und
+ * Teamler-Konditionen. Die Sechs-Monats-Grenze gilt auch hier.
+ */
+export async function setCustomSubscriptionCore(
+  memberId: string,
+  betrag: number,
+  tage: number,
+  actorId: string,
+  optionen: { ohneAbbuchung?: boolean } = {}
+): Promise<SetSubscriptionResult> {
+  const target = await prisma.member.findUnique({ where: { id: memberId } });
+  if (!target) return { ok: false, error: "Mitglied nicht gefunden." };
+  if (!Number.isFinite(tage) || tage < 1) return { ok: false, error: "Bitte eine Laufzeit ab 1 Tag angeben." };
+  if (!Number.isFinite(betrag) || betrag < 0) return { ok: false, error: "Der Betrag darf nicht negativ sein." };
+
+  const preis = Math.round(betrag);
+  const dauer = Math.round(tage);
+
+  if (!optionen.ohneAbbuchung && target.balance < preis) {
+    return {
+      ok: false,
+      error: `Nicht genug Guthaben (aktuell ${formatCoins(target.balance)}, benötigt ${formatCoins(preis)}).`,
+    };
+  }
+
+  const plan: SubscriptionPlan = {
+    id: "CUSTOM",
+    label: `${dauer} Tag${dauer === 1 ? "" : "e"} (individuell)`,
+    price: preis,
+    days: dauer,
+  };
+
+  if (exceedsMaxSubscription(plan, target.feePaidUntil)) {
+    const ende = subscriptionEndAfter(plan, target.feePaidUntil);
+    return {
+      ok: false,
+      error: `Damit würde das Abo bis ${ende.toLocaleDateString("de-DE")} laufen — weiter als ${MAX_SUBSCRIPTION_AHEAD_MONTHS} Monate im Voraus geht nicht.`,
+    };
+  }
+
+  const now = new Date();
+  const base = target.feePaidUntil && target.feePaidUntil > now ? target.feePaidUntil : now;
+  const newExpiry = addPlanDuration(new Date(base), plan);
+
+  await prisma.member.update({
+    where: { id: memberId },
+    data: {
+      subscriptionPlan: plan.id,
+      monthlyFee: preis,
+      feePaidUntil: newExpiry,
+      subscriptionReminderSentAt: null,
+      ...(optionen.ohneAbbuchung ? {} : { balance: { decrement: preis } }),
+      graceUntil: null,
+      graceReminderSentAt: null,
+      expiryDmSentAt: null,
+      subscriptionAnnouncedAt: null,
+    },
+  });
+
+  await announceSubscription(memberId, plan, newExpiry).catch(() => {});
+
+  await logAction({
+    actorId,
+    targetId: memberId,
+    action: optionen.ohneAbbuchung ? "SUBSCRIPTION_GRANTED" : "SUBSCRIPTION_CHARGED",
+    details:
+      `Individuelles Abo: ${dauer} Tag${dauer === 1 ? "" : "e"} für ${formatCoins(preis)}` +
+      (optionen.ohneAbbuchung ? " (ohne Abbuchung)" : " vom Guthaben abgebucht") +
+      `, gültig bis ${newExpiry.toLocaleDateString("de-DE")}.`,
   });
 
   return { ok: true, plan, newExpiry };

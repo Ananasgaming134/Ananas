@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { logAction } from "@/lib/audit";
 import { DISCORD_BOT_TOKEN, DISCORD_PAYMENTS_CHANNEL_ID, sendDiscordDirectMessage } from "@/lib/discord";
 import { MEMBER_STATUS, SITE_URL, formatCoins } from "@/lib/constants";
+import { settleFinesFromBalance } from "@/lib/discipline";
 
 type DiscordEmbed = {
   title?: string;
@@ -183,6 +184,11 @@ export async function creditPaymentCore(
     details: `Zahlung von ${payment.amount} ₵ (@${payment.discordUsername}) als Guthaben gutgeschrieben.`,
   });
 
+  // Offene Geldstrafen werden zuerst bedient - erst danach steht das Geld
+  // fuer ein Abo zur Verfuegung.
+  const aufStrafen = await settleFinesFromBalance(payment.memberId, actorId);
+  const standNachStrafen = updated.balance - aufStrafen;
+
   await sendDiscordDirectMessage(payment.member.discordId, {
     embeds: [
       {
@@ -193,7 +199,11 @@ export async function creditPaymentCore(
 ` +
           `**Gutgeschrieben:** ${formatCoins(payment.amount)}
 ` +
-          `**Neues Guthaben:** ${formatCoins(updated.balance)}
+          (aufStrafen > 0
+            ? `**Davon auf offene Strafen:** ${formatCoins(aufStrafen)}
+`
+            : "") +
+          `**Neues Guthaben:** ${formatCoins(standNachStrafen)}
 
 ` +
           `Mit \`/verlaengern\` schließt du dein Abo direkt vom Guthaben ab — auch mit einem anderen Tarif. ` +

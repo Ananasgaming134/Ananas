@@ -106,8 +106,17 @@ model Member {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // Rechte-Sperre wegen eines Verstosses: das Abo laeuft weiter, ausleihen
+  // darf die Person aber nicht mehr, bis das Team die Sperre aufhebt.
+  // Getrennt von borrowSuspendedUntil (automatische Sperre nach Ueberziehung)
+  // und von lockedAt (Abo laeuft aus, keine Verlaengerung mehr).
+  rightsBlockedAt     DateTime?
+  rightsBlockReason   String?
+  rightsBlockedById   String?
+
   loans          Loan[]
   favorites      Favorite[]
+  fines          Fine[]
   planChangeRequests PlanChangeRequest[]
   notesAbout     MemberNote[] @relation("NotesAboutMember")
   notesAuthored  MemberNote[] @relation("NotesByAuthor")
@@ -586,4 +595,22 @@ model Favorite {
 
   @@unique([memberId, itemId])
   @@index([memberId])
+}
+
+/// Geldstrafe, die vom Guthaben des Mitglieds beglichen wird. Reicht das
+/// Guthaben nicht, bleibt der Rest offen und wird automatisch abgezogen,
+/// sobald wieder Geld eingeht.
+model Fine {
+  id         String    @id @default(cuid())
+  memberId   String
+  member     Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  amount     Int
+  paidAmount Int       @default(0)
+  reason     String
+  issuedById String?
+  paidAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([memberId])
+  @@index([paidAt])
 }

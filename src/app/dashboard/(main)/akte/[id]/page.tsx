@@ -21,6 +21,13 @@ import AboAssignForm from "@/components/AboAssignForm";
 import BalanceAdjustForm from "@/components/BalanceAdjustForm";
 import VerifyForm from "@/components/VerifyForm";
 import SanctionForm from "@/components/SanctionForm";
+import {
+  AboGewaehrenForm,
+  EigenesAboForm,
+  GeldstrafeForm,
+  RechteSperrenForm,
+} from "@/components/DisziplinPanel";
+import { unblockRights, cancelFine } from "@/app/actions/discipline";
 import { unverifyMember } from "@/app/actions/verification";
 import { removeSanction } from "@/app/actions/sanctions";
 import { SANCTION_TYPE_LABELS } from "@/lib/sanctions";
@@ -51,7 +58,7 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
 
   // Die Merkliste ist persoenlich - sie wird nur im eigenen Profil geladen
   // und angezeigt, nicht wenn die Aufsicht eine fremde Akte oeffnet.
-  const [loans, notes, suspensionEvents, sanctions, merkliste, aktiveAusleihenGesamt] =
+  const [loans, notes, suspensionEvents, sanctions, merkliste, aktiveAusleihenGesamt, strafen] =
     await Promise.all([
     prisma.loan.findMany({
       where: { memberId: target.id },
@@ -88,6 +95,7 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
           _count: { itemId: true },
         })
       : Promise.resolve([]),
+    prisma.fine.findMany({ where: { memberId: id }, orderBy: { createdAt: "desc" } }),
     ]);
 
   const belegtProItem = new Map(aktiveAusleihenGesamt.map((l) => [l.itemId, l._count.itemId]));
@@ -365,6 +373,111 @@ export default async function AktePage({ params }: { params: Promise<{ id: strin
           )}
         </div>
       </div>
+
+      {showManageActions && (
+        <div className="card space-y-6 p-6">
+          <div>
+            <h2 className="text-sm font-semibold">Maßnahmen</h2>
+            <p className="mt-1 text-xs text-muted">
+              Greift sofort und unabhängig davon, ob ein Abo läuft. Betroffene werden jeweils per
+              Direktnachricht informiert.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+              Ausleih-Rechte
+            </h3>
+            {target.rightsBlockedAt ? (
+              <div className="rounded-lg border border-danger/40 bg-danger/5 p-4">
+                <p className="text-sm font-medium text-danger">
+                  🚫 Rechte gesperrt seit{" "}
+                  {target.rightsBlockedAt.toLocaleString("de-DE", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })}
+                </p>
+                {target.rightsBlockReason && (
+                  <p className="mt-1 text-sm text-muted">Grund: {target.rightsBlockReason}</p>
+                )}
+                <form action={unblockRights.bind(null, target.id)} className="mt-3">
+                  <button
+                    type="submit"
+                    className="rounded-lg border border-accent-2/40 bg-accent-2/10 px-4 py-2 text-sm font-medium text-accent-2 transition hover:bg-accent-2/20"
+                  >
+                    Rechte wieder freigeben
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <RechteSperrenForm memberId={target.id} />
+            )}
+          </div>
+
+          <div>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+              Geldstrafe
+            </h3>
+            <GeldstrafeForm memberId={target.id} balance={target.balance} />
+
+            {strafen.length > 0 && (
+              <ul className="mt-3 divide-y divide-border border-t border-border">
+                {strafen.map((strafe) => {
+                  const offen = strafe.amount - strafe.paidAmount;
+                  return (
+                    <li key={strafe.id} className="flex flex-wrap items-start justify-between gap-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm">
+                          <span className="font-medium">{formatCoins(strafe.amount)}</span>{" "}
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                              strafe.paidAt
+                                ? "border-accent-2/40 bg-accent-2/10 text-accent-2"
+                                : "border-yellow-500/40 bg-yellow-500/10 text-yellow-500"
+                            }`}
+                          >
+                            {strafe.paidAt ? "beglichen" : `${formatCoins(offen)} offen`}
+                          </span>
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted">
+                          {strafe.reason} ·{" "}
+                          {strafe.createdAt.toLocaleDateString("de-DE")}
+                        </p>
+                      </div>
+                      <form action={cancelFine.bind(null, target.id, strafe.id)}>
+                        <button
+                          type="submit"
+                          className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-surface-2"
+                        >
+                          Streichen
+                        </button>
+                      </form>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          {showOwnerActions && (
+            <>
+              <div>
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+                  Abo ohne Guthaben gewähren
+                </h3>
+                <AboGewaehrenForm memberId={target.id} plans={SUBSCRIPTION_PLANS} />
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">
+                  Eigenes Abo nach Maß
+                </h3>
+                <EigenesAboForm memberId={target.id} />
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {isAufsichtPlus && (
         <div className="card p-6">

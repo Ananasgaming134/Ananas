@@ -55,6 +55,19 @@ export async function borrowItemCore(
 
   const now = new Date();
 
+  // Sperre durch das Team wegen eines Verstosses - laeuft nicht von selbst
+  // ab, sondern muss aufgehoben werden. Steht vor der automatischen Sperre,
+  // weil sie schwerer wiegt und ihr Grund konkreter ist.
+  if (member.rightsBlockedAt) {
+    return {
+      ok: false,
+      error:
+        "Deine Ausleih-Rechte wurden vom Team gesperrt" +
+        (member.rightsBlockReason ? ` — Grund: ${member.rightsBlockReason}` : "") +
+        ". Melde dich über ein Support-Ticket, wenn du das klären möchtest.",
+    };
+  }
+
   if (member.borrowSuspendedUntil && member.borrowSuspendedUntil > now) {
     const remaining = formatMinutes(member.borrowSuspendedUntil.getTime() - now.getTime());
     return {
