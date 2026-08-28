@@ -180,11 +180,14 @@ export default async function ItemsPage({
         )}
       </div>
 
-      {myActiveLoans.length > 1 && (
+      {myActiveLoans.length > 0 && (
         <div className="card flex flex-wrap items-center justify-between gap-3 p-4">
           <p className="text-sm">
             Du hast gerade{" "}
-            <span className="font-medium">{myActiveLoans.length} Items</span> ausgeliehen.
+            <span className="font-medium">
+              {myActiveLoans.length} Item{myActiveLoans.length === 1 ? "" : "s"}
+            </span>{" "}
+            ausgeliehen.
           </p>
           <ReturnAllButton anzahl={myActiveLoans.length} />
         </div>

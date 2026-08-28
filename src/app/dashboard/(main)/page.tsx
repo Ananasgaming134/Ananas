@@ -3,6 +3,7 @@ import { requireMember } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import StatCard from "@/components/StatCard";
 import LoanCountdown from "@/components/LoanCountdown";
+import ReturnAllButton from "@/components/ReturnAllButton";
 import Mascot from "@/components/Mascot";
 import { formatCoins, getSubscriptionPlan, LOAN_STATUS } from "@/lib/constants";
 
@@ -134,6 +135,11 @@ export default async function DashboardPage() {
                 </li>
               ))}
             </ul>
+          )}
+          {myActiveLoans.length > 0 && (
+            <div className="mt-3">
+              <ReturnAllButton anzahl={myActiveLoans.length} />
+            </div>
           )}
           <p className="mt-3 text-xs text-muted">
             Insgesamt {myLoans.length} Ausleihe(n) in deiner Historie.
