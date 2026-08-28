@@ -153,6 +153,28 @@ function ephemeral(content: string) {
  * anschliessend in die urspruengliche Antwort nachgetragen - dafuer laesst
  * Discord 15 Minuten Zeit.
  */
+/**
+ * Bringt die Discord-Panels NACH dem Beantworten der Interaktion auf den
+ * neuen Stand.
+ *
+ * Discord erwartet innerhalb von 3 Sekunden eine Antwort. Das Neuschreiben
+ * der Panel-Nachrichten dauert laenger - zwischen den Nachrichten liegen
+ * bewusst Pausen, sonst sperrt Discord uns aus. Solange darauf gewartet
+ * wurde, lief die Interaktion in die Zeitueberschreitung: die Rueckgabe war
+ * in der Datenbank laengst gebucht, in Discord stand aber
+ * "Interaktion fehlgeschlagen".
+ */
+function panelsNachziehen() {
+  after(async () => {
+    try {
+      await refreshPanelsQuietly();
+      await syncCategoryChannelsQuietly();
+    } catch (err) {
+      console.error("[panels] Aktualisierung nach Interaktion fehlgeschlagen:", err);
+    }
+  });
+}
+
 function deferAndRun(
   interaction: DiscordInteractionPayload,
   work: () => Promise<string>,
@@ -1526,8 +1548,7 @@ async function handleBorrow(
   }
 
   const result = await borrowItemCore(itemId, member.id, LOAN_CHANNEL.DISCORD);
-  await refreshPanelsQuietly();
-  await syncCategoryChannelsQuietly();
+  panelsNachziehen();
 
   return ephemeral(
     result.ok ? "✅ Item ausgeliehen. Viel Spaß!" : `❌ ${result.error}`
@@ -1587,8 +1608,7 @@ async function handleReturn(loanId: string, discordUser: DiscordInteractionUser)
   if (!member) return ephemeral("Kein Datensatz gefunden.");
 
   const result = await returnLoanCore(loanId, member.id);
-  await refreshPanelsQuietly();
-  await syncCategoryChannelsQuietly();
+  panelsNachziehen();
 
   if (!result.ok) return ephemeral(`❌ ${result.error}`);
 
@@ -1743,8 +1763,7 @@ async function handleForceReturn(
 
   const actor = await ensureMemberFromDiscordUser(discordUser);
   const result = await returnLoanCore(loanId, actor.id, { allowForeign: true });
-  await refreshPanelsQuietly();
-  await syncCategoryChannelsQuietly();
+  panelsNachziehen();
 
   if (!result.ok) return ephemeral(`❌ ${result.error}`);
   return ephemeral(`✅ **${result.itemName}** wurde für das Mitglied ausgebucht.`);
