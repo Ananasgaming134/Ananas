@@ -4,12 +4,19 @@ import StatBar from "@/components/StatBar";
 import PageHeader from "@/components/PageHeader";
 import { getGeneralStats } from "@/lib/stats";
 import { getReviewSummary, renderStars } from "@/lib/reviews";
-import { ROLES } from "@/lib/constants";
+import { hasAtLeastRole, LOAN_STATUS, ROLES } from "@/lib/constants";
+import { prisma } from "@/lib/prisma";
+import StatsResetForm from "@/components/StatsResetForm";
 
 export default async function StatistikPage() {
-  await requireMember(ROLES.AUFSICHT);
+  const viewer = await requireMember(ROLES.AUFSICHT);
+  const istOwner = hasAtLeastRole(viewer.role, ROLES.OWNER);
 
-  const [stats, reviewSummary] = await Promise.all([getGeneralStats(), getReviewSummary()]);
+  const [stats, reviewSummary, laufend] = await Promise.all([
+    getGeneralStats(),
+    getReviewSummary(),
+    prisma.loan.count({ where: { status: LOAN_STATUS.ACTIVE } }),
+  ]);
 
   const maxItemCount = stats.topItems[0]?.count ?? 0;
   const maxCategoryCount = stats.topCategories[0]?.count ?? 0;
@@ -119,6 +126,19 @@ export default async function StatistikPage() {
           </p>
         </div>
       </div>
+
+      {istOwner && (
+        <div className="card border-danger/30 p-5">
+          <h2 className="mb-1 text-sm font-semibold text-danger">Statistik zurücksetzen</h2>
+          <p className="mb-4 text-xs text-muted">
+            Nur für Owner. Lässt sich nicht rückgängig machen.
+          </p>
+          <StatsResetForm
+            abgeschlossen={stats.totalLoans - laufend}
+            laufend={laufend}
+          />
+        </div>
+      )}
     </div>
   );
 }
