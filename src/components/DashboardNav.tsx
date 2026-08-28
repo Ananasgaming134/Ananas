@@ -64,6 +64,12 @@ const VERWALTUNG_GROUPS: NavGroup[] = [
     items: [
       { href: "/dashboard/verwaltung/ausleihen", label: "Derzeit ausgeliehen", icon: "🔄" },
       { href: "/dashboard/verwaltung/items", label: "Items", icon: "📦", minRole: ROLES.OWNER },
+      {
+        href: "/dashboard/verwaltung/items/kategorien",
+        label: "Kategorien & Panels",
+        icon: "🗂️",
+        minRole: ROLES.OWNER,
+      },
       { href: "/dashboard/verwaltung/zahlungen", label: "Zahlungen", icon: "💰" },
       { href: "/dashboard/verwaltung/logs", label: "Logs", icon: "📜" },
       { href: "/dashboard/verwaltung/regelwerk", label: "Regelwerk", icon: "📗", minRole: ROLES.OWNER },
@@ -98,6 +104,15 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 }
 
 function renderGroups(groups: NavGroup[], role: string, pathname: string, exactRoot: string) {
+  // Nur EIN Punkt darf leuchten. Weil Adressen ineinander liegen
+  // (/verwaltung/items ist der Anfang von /verwaltung/items/kategorien),
+  // gewinnt die laengste passende - sonst leuchteten beide.
+  const passende = groups
+    .flatMap((g) => g.items)
+    .filter((item) => (item.href === exactRoot ? pathname === item.href : pathname.startsWith(item.href)))
+    .sort((a, b) => b.href.length - a.href.length);
+  const aktiveAdresse = passende[0]?.href;
+
   return groups.map((group, i) => {
     const visible = group.items.filter((item) => !item.minRole || hasAtLeastRole(role, item.minRole));
     if (visible.length === 0) return null;
@@ -111,8 +126,7 @@ function renderGroups(groups: NavGroup[], role: string, pathname: string, exactR
         )}
         <div className="flex flex-col gap-0.5">
           {visible.map((item) => {
-            const active = item.href === exactRoot ? pathname === item.href : pathname.startsWith(item.href);
-            return <NavLink key={item.href} item={item} active={active} />;
+            return <NavLink key={item.href} item={item} active={item.href === aktiveAdresse} />;
           })}
         </div>
       </div>
