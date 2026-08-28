@@ -92,16 +92,24 @@ export default async function AboPage() {
           oben selbst dein Paket. Eine Rücküberweisung ist
           nicht möglich; Guthaben verfällt nur bei einem Ausschluss wegen Regelverstoß.
         </p>
-        <div className="rounded-lg border border-accent/30 bg-accent/5 p-4">
-          <p className="text-sm font-medium text-accent">💡 Tipp: Dauerauftrag einrichten</p>
+        <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4">
+          <p className="text-sm font-medium text-yellow-500">
+            ⚠️ Dauerauftrag zurzeit bitte nicht nutzen
+          </p>
           <p className="mt-1.5 text-xs text-muted">
-            Richtest du dir einen Dauerauftrag mit genau diesem Verwendungszweck ein, wächst dein
-            Guthaben automatisch weiter, ohne dass du selbst jedes Mal daran denken musst.
-            Bevorzugst du es lieber persönlich zu regeln, eröffne stattdessen ein{" "}
+            Bei Daueraufträgen hat die Anbindung noch Lücken — es kann passieren, dass eine Buchung
+            nicht erkannt wird und dein Guthaben ausbleibt. Richte deshalb vorerst keinen ein.
+          </p>
+          <p className="mt-1.5 text-xs text-muted">
+            Die <span className="text-foreground">normale Überweisung funktioniert ganz normal</span>{" "}
+            und wird zuverlässig erkannt — überweise einfach von Hand, wenn du Guthaben brauchst.
+          </p>
+          <p className="mt-1.5 text-xs text-muted">
+            Soll es direkt gehen oder ist doch etwas nicht angekommen, melde dich beim Team über ein{" "}
             <Link href="/dashboard/tickets" className="text-accent hover:underline">
               Support-Ticket
             </Link>{" "}
-            — die Aufsicht kümmert sich dann direkt mit dir darum.
+            — dort wird dein Guthaben von Hand aufgeladen.
           </p>
         </div>
         <p className="text-xs text-muted">
