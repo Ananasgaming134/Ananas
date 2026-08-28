@@ -942,10 +942,15 @@ export async function syncCategoryChannels(): Promise<CategorySyncResult> {
     };
 
     // Kanaele legt niemand mehr automatisch an - welcher Kanal zu welcher
-    // Kategorie gehoert, tragen die Owner selbst ein. Ohne Eintrag gibt es
-    // fuer diese Kategorie schlicht kein Panel.
+    // Kategorie gehoert, tragen die Owner selbst ein.
     const channelId = dbCategory.discordChannelId;
     if (!channelId) continue;
+
+    // Das ERSTE Senden passiert nur von Hand (Knopf auf der Kategorien-
+    // Seite). Dieser Abgleich haelt bestehende Panels aktuell, schickt aber
+    // von sich aus nie eines in einen Kanal - sonst taucht ploetzlich etwas
+    // in einem Kanal auf, in dem es noch niemand haben wollte.
+    if (!dbCategory.panelMessageIds) continue;
 
     const payloads = await buildCategoryChannelMessages(live);
     const hash = hashPayload(payloads);
@@ -1012,15 +1017,40 @@ export async function repostCategoryPanel(categoryId: string): Promise<{ ok: boo
     await deleteMessage(category.discordChannelId, id).catch(() => {});
   }
 
-  // Ohne gemerkte Nachrichten und ohne Pruefsumme legt der Abgleich neu an.
+  // Hier wird bewusst selbst gepostet statt ueber syncCategoryChannels: der
+  // Abgleich schickt absichtlich nie ein erstes Panel los.
+  const { categories } = await loadPanelCategories();
+  const live: PanelCategory = categories.find((c) => c.key === categoryId) ?? {
+    key: categoryId,
+    label: category.name,
+    items: [],
+  };
+
+  const payloads = await buildCategoryChannelMessages(live);
+  const neueIds: string[] = [];
+
+  for (const payload of payloads) {
+    const posted = await postOrUpdateMessage(category.discordChannelId, null, payload);
+    if (!posted.ok) {
+      // Was schon steht, bleibt gemerkt - sonst bliebe es verwaist zurueck.
+      if (neueIds.length > 0) {
+        await prisma.category.update({
+          where: { id: categoryId },
+          data: { panelMessageIds: neueIds.join(","), panelHash: null },
+        });
+      }
+      return { ok: false, error: posted.error };
+    }
+    neueIds.push(posted.messageId);
+    await sleep(350);
+  }
+
   await prisma.category.update({
     where: { id: categoryId },
-    data: { panelMessageIds: null, panelHash: null },
+    data: { panelMessageIds: neueIds.join(","), panelHash: hashPayload(payloads) },
   });
 
-  const result = await syncCategoryChannels();
-  const fehler = result.errors.find((e) => e.startsWith(category.name));
-  return fehler ? { ok: false, error: fehler } : { ok: true };
+  return { ok: true };
 }
 
 /** Wie syncCategoryChannels(), schluckt aber Fehler - fuer Web-Aktionen. */

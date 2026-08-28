@@ -112,8 +112,8 @@ export default async function KategorienPage() {
                   {category.discordChannelId && (
                     <p className="mt-1 text-[11px] text-muted">
                       {category.panelMessageIds
-                        ? `Panel steht (${category.panelMessageIds.split(",").length} Nachricht(en))`
-                        : "Panel noch nicht gesendet"}
+                        ? `Panel steht (${category.panelMessageIds.split(",").length} Nachricht(en)) und hält sich aktuell`
+                        : "Noch nichts gesendet — erst auf „Senden“ klicken"}
                     </p>
                   )}
                 </td>
@@ -124,9 +124,13 @@ export default async function KategorienPage() {
                       <form action={resendCategoryPanel.bind(null, category.id)}>
                         <button
                           type="submit"
-                          className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium transition hover:border-accent/40 hover:bg-surface-2"
+                          className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                            category.panelMessageIds
+                              ? "border border-border hover:border-accent/40 hover:bg-surface-2"
+                              : "bg-accent font-semibold text-black hover:brightness-110"
+                          }`}
                         >
-                          Neu senden
+                          {category.panelMessageIds ? "Neu senden" : "Senden"}
                         </button>
                       </form>
                     )}
@@ -164,6 +168,11 @@ export default async function KategorienPage() {
           Der Kanal selbst gehört dir: Wir legen keine Kanäle mehr an, benennen keine um und löschen
           keine. Wird eine Kategorie gelöscht oder der Kanal gewechselt, räumen wir nur unsere
           eigenen Panel-Nachrichten weg.
+        </p>
+        <p className="mt-2">
+          <span className="text-foreground">Gesendet wird nur, wenn du es sagst.</span> Eine
+          hinterlegte Kanal-ID allein schickt nichts los — erst mit „Senden“ landet das Panel im
+          Kanal. Ab dann hält es sich von selbst aktuell, sobald sich am Bestand etwas ändert.
         </p>
       </div>
 
